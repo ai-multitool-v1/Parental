@@ -10,6 +10,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 import org.setbd.parentcontrol.auth.AuthRepository
 import org.setbd.parentcontrol.di.ServiceLocator
 import org.setbd.parentcontrol.net.SecureApi
