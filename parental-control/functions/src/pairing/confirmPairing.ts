@@ -49,7 +49,9 @@ import { REGION } from "../lib/constants";
 import { ensureChildDek, isKekConfigured } from "../lib/backupKey";
 
 export const confirmPairing = onCall(
-  { region: REGION, timeoutSeconds: 60, memory: "256MiB" },
+  // BACKUP_KEK: DEK escrow at pairing time — must be declared or the secret
+  // is never injected (see lib/backupKey.ts; failure here is best-effort).
+  { region: REGION, timeoutSeconds: 60, memory: "256MiB", secrets: ["BACKUP_KEK"] },
   async (request) => {
     const uid = requireSignedIn(request);
     assertAppCheck(request);

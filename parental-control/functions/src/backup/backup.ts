@@ -54,12 +54,17 @@ import {
   R2_SECRET_ACCESS_KEY_PARAM,
 } from "../lib/constants";
 
-/** Secrets declared for the backup callables (Secret Manager). */
-const r2Secrets = [
+/** Secrets declared for the backup callables (Secret Manager).
+ *  BACKUP_KEK must be declared here (and on confirmPairing) — v2 injects
+ *  a Secret Manager value into process.env ONLY when the function declares
+ *  it in `secrets`; otherwise isKekConfigured() is always false and the
+ *  whole backup feature degrades to UNAVAILABLE even with the secret set. */
+const backupSecrets = [
   R2_ACCOUNT_ID_PARAM,
   R2_ACCESS_KEY_ID_PARAM,
   R2_SECRET_ACCESS_KEY_PARAM,
   R2_BUCKET_PARAM,
+  "BACKUP_KEK",
 ];
 
 /* ------------------------------------------------------------ helpers --- */
@@ -270,7 +275,7 @@ export const backupSetPolicy = onCall(
  * event; the audit row never contains key material itself).
  */
 export const backupGetKey = onCall(
-  {region: REGION, timeoutSeconds: 30, memory: "256MiB"},
+  {region: REGION, timeoutSeconds: 30, memory: "256MiB", secrets: backupSecrets},
   async (request) => {
     const caller = await identifyBackupCaller(request);
     const data = (request.data ?? {}) as Record<string, unknown>;
@@ -335,7 +340,7 @@ export const backupGetKey = onCall(
  * can never choose (or guess) where another family's data lives.
  */
 export const backupCreateUploadUrl = onCall(
-  {region: REGION, timeoutSeconds: 30, memory: "256MiB", secrets: r2Secrets},
+  {region: REGION, timeoutSeconds: 30, memory: "256MiB", secrets: backupSecrets},
   async (request) => {
     const caller = await identifyBackupCaller(request);
     const data = (request.data ?? {}) as Record<string, unknown>;
@@ -423,7 +428,7 @@ export const backupCreateUploadUrl = onCall(
  * and the child-level backupIndex (phone-reset restore path).
  */
 export const backupCompleteUpload = onCall(
-  {region: REGION, timeoutSeconds: 60, memory: "256MiB", secrets: r2Secrets},
+  {region: REGION, timeoutSeconds: 60, memory: "256MiB", secrets: backupSecrets},
   async (request) => {
     const caller = await identifyBackupCaller(request);
     const data = (request.data ?? {}) as Record<string, unknown>;
@@ -528,7 +533,7 @@ export const backupCompleteUpload = onCall(
 
 /** Short-lived private GET for the parent dashboard view/restore flows. */
 export const backupGetDownloadUrl = onCall(
-  {region: REGION, timeoutSeconds: 30, memory: "256MiB", secrets: r2Secrets},
+  {region: REGION, timeoutSeconds: 30, memory: "256MiB", secrets: backupSecrets},
   async (request) => {
     const caller = await identifyBackupCaller(request);
     const data = (request.data ?? {}) as Record<string, unknown>;
