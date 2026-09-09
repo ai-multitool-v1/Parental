@@ -1,0 +1,80 @@
+# Build Android Debug APK — Family Safety child app
+#
+# • Builds on every push that touches the Android module (and manually via
+#   workflow_dispatch).
+# • Gradle 8.5 + JDK 17 (matched to AGP 8.2.2 / Kotlin 1.9.22).
+# • google-services.json is taken from the GOOGLE_SERVICES_JSON repository
+#   secret (paste the FULL raw JSON of the file Firebase console gave you —
+#   repo settings → Secrets and variables → Actions → New repository secret).
+#   If the secret is not set, the checked-in example file is used so CI stays
+#   green — but the APK will NOT connect to Firebase until you add the real
+#   one (expected: it is gitignored on purpose).
+# • APK is uploaded as a build artifact: Actions → run → Artifacts →
+#   app-debug-apk (installable directly on a device).
+#
+# Develop By Silent Exploit Team Bd · Powered By AI MultiTool
+
+name: Build Android APK
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "parental-control/android/**"
+      - ".github/workflows/android-build.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: android-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-apk:
+    name: Assemble Debug APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle 8.5
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.5"
+
+      - name: Prepare google-services.json
+        working-directory: parental-control/android/app
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          if [ -n "$GOOGLE_SERVICES_JSON" ]; then
+            printf '%s' "$GOOGLE_SERVICES_JSON" > google-services.json
+            echo "google-services.json: using GOOGLE_SERVICES_JSON secret"
+          else
+            cp google-services.json.example google-services.json
+            echo "WARNING: GOOGLE_SERVICES_JSON secret not set — using placeholder example file. Build will pass but the APK will not connect to Firebase."
+          fi
+
+      - name: Build debug APK
+        working-directory: parental-control/android
+        run: gradle assembleDebug --stacktrace
+
+      - name: Locate APK
+        run: |
+          APK=$(ls parental-control/android/app/build/outputs/apk/debug/*.apk | head -n 1)
+          echo "APK_PATH=$APK" >> "$GITHUB_ENV"
+          echo "Built: $APK ($(du -h "$APK" | cut -f1))"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug-apk
+          path: parental-control/android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 30
