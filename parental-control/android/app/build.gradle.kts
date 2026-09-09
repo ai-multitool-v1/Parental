@@ -88,11 +88,11 @@ dependencies {
     implementation("androidx.navigation:navigation-compose:2.7.7")
     debugImplementation("androidx.compose.ui:ui-tooling")
 
-    // ---- Firebase (BOM 33.1.1 — the LAST BoM supporting minSdk 21):
-    //      Auth, Firestore, FCM, App Check, Functions. BoM 33.1.2+ (June
-    //      2024 wave: auth 23/firestore 25/messaging 24) hard-requires
-    //      minSdk 23 and breaks the manifest merger on API-21 builds. ----
-    implementation(platform("com.google.firebase:firebase-bom:33.1.1"))
+    // ---- Firebase (BoM 32.8.1 — the LAST BoM supporting minSdk 21:
+    //      auth 22.3.1 / firestore 24.11.1 / messaging 23.4.1). From BoM
+    //      33.0.0 onward (auth 23.x) every SDK hard-requires minSdk 23,
+    //      which breaks the manifest merger on API-21 builds. ----
+    implementation(platform("com.google.firebase:firebase-bom:32.8.1"))
     implementation("com.google.firebase:firebase-auth-ktx")
     implementation("com.google.firebase:firebase-firestore-ktx")
     implementation("com.google.firebase:firebase-messaging-ktx")
