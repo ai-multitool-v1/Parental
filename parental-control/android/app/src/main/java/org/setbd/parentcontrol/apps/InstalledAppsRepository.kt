@@ -37,12 +37,13 @@ class InstalledAppsRepository(private val context: Context) {
     /** Reads the local inventory (public PackageManager API). */
     fun readInstalledApps(): List<InstalledApp> {
         val pm = context.packageManager
-        val flags = if (Build.VERSION.SDK_INT >= 33) {
-            PackageManager.ApplicationInfoFlags.of(0)
+        val apps = if (Build.VERSION.SDK_INT >= 33) {
+            pm.getInstalledApplications(PackageManager.ApplicationInfoFlags.of(0))
         } else {
-            @Suppress("DEPRECATION") 0
+            @Suppress("DEPRECATION")
+            pm.getInstalledApplications(0)
         }
-        return pm.getInstalledApplications(flags).mapNotNull { info ->
+        return apps.mapNotNull { info ->
             try {
                 val versionName = if (Build.VERSION.SDK_INT >= 33) {
                     pm.getPackageInfo(info.packageName, PackageManager.PackageInfoFlags.of(0)).versionName

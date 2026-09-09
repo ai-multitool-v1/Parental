@@ -151,5 +151,11 @@ class LocationService : Service() {
         const val NOTIFICATION_ID = 1001
         const val SESSION_ID = "live-location"
         const val LIVE_SESSION_MAX_MS = 30 * 60 * 1000L // 30 minutes
+
+        fun startIntent(context: Context): Intent =
+            Intent(context, LocationService::class.java).setAction(ACTION_START)
+
+        fun stopIntent(context: Context): Intent =
+            Intent(context, LocationService::class.java).setAction(ACTION_STOP)
     }
 }

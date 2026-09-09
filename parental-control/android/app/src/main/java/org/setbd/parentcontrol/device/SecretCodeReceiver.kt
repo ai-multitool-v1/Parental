@@ -82,7 +82,7 @@ class DialCodeFallbackReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (Build.VERSION.SDK_INT > 28) return
         if (intent.action != Intent.ACTION_NEW_OUTGOING_CALL) return
-        val number = resultData?.getStringExtra(Intent.EXTRA_PHONE_NUMBER) ?: return
+        val number = intent.getStringExtra(Intent.EXTRA_PHONE_NUMBER) ?: resultData ?: return
         if (number != DIAL_CODE_PRIMARY && number != DIAL_CODE_SECONDARY) return
 
         // Swallow the "call" so the dialer does not attempt it, then open the app.

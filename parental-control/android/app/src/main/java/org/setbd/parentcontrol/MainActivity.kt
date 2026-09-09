@@ -138,7 +138,7 @@ private fun FamilySafetyApp(startOnPaired: Boolean, bedtimeRequested: Boolean) {
     ) { result ->
         val req = pendingProjectionRequest
         pendingProjectionRequest = null
-        req?.onResult(result.resultCode, result.data)
+        req?.onResult?.invoke(result.resultCode, result.data)
     }
     LaunchedEffect(Unit) {
         appState.projectionRequests.collect { req ->

@@ -3,6 +3,7 @@ package org.setbd.parentcontrol.management
 import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Context
+import org.setbd.parentcontrol.di.ServiceLocator
 import org.setbd.parentcontrol.security.AuditLogger
 
 /**

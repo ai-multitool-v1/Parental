@@ -8,6 +8,7 @@ import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -160,9 +161,11 @@ fun BackupSettingsSection() {
 
         Spacer(Modifier.height(8.dp))
         OutlinedButton(onClick = {
-            ServiceLocator.backupPolicyRepository.refreshConsentCache()
-            BackupScheduler.requestReconcile(context)
             toast = context.getString(R.string.backup_reconcile_started)
+            scope.launch {
+                ServiceLocator.backupPolicyRepository.refreshConsentCache()
+                BackupScheduler.requestReconcile(context)
+            }
         }) {
             Text(stringResource(R.string.backup_reconcile_now))
         }
@@ -255,12 +258,11 @@ fun BackupQuickCard(onOpenSettings: () -> Unit) {
                 )
             }
             Spacer(Modifier.height(6.dp))
+            val stateOn = stringResource(R.string.backup_state_on)
+            val stateOff = stringResource(R.string.backup_state_off)
             Text(
                 BackupCategory.entries.joinToString(" · ") { cat ->
-                    "${labelOf(cat)}: " + when {
-                        consented(cat) -> stringResource(R.string.backup_state_on)
-                        else -> stringResource(R.string.backup_state_off)
-                    }
+                    "${labelOf(cat)}: " + if (consented(cat)) stateOn else stateOff
                 },
                 style = MaterialTheme.typography.bodySmall,
             )

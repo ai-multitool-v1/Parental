@@ -23,8 +23,8 @@ data class Signal(
  * Firestore-based signaling for WebRTC sessions.
  *
  * Path: `devices/{deviceId}/sessions/{sessionId}` (session doc with
- * status/startedAt) and `devices/{deviceId}/sessions/{sessionId}/signals/*`
- * (ordered envelopes).
+ * status/startedAt) and `devices/{deviceId}/sessions/{sessionId}/signals`
+ * (ordered envelopes, one document per signal).
  *
  * WHY Firestore signaling: it rides the same authenticated, App-Check-
  * protected, rules-enforced channel as everything else — no extra socket

@@ -95,12 +95,13 @@ class UsageStatsRepository(private val context: Context) {
         val appNameCache = HashMap<String, String>()
         fun appName(pkg: String): String = appNameCache.getOrPut(pkg) {
             try {
-                val flags = if (Build.VERSION.SDK_INT >= 33) {
-                    PackageManager.ApplicationInfoFlags.of(0)
+                val info = if (Build.VERSION.SDK_INT >= 33) {
+                    pm.getApplicationInfo(pkg, PackageManager.ApplicationInfoFlags.of(0))
                 } else {
-                    @Suppress("DEPRECATION") 0
+                    @Suppress("DEPRECATION")
+                    pm.getApplicationInfo(pkg, 0)
                 }
-                pm.getApplicationInfo(pkg, flags).loadLabel(pm).toString()
+                info.loadLabel(pm).toString()
             } catch (e: Exception) { pkg }
         }
 

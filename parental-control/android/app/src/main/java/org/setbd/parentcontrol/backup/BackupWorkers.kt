@@ -333,9 +333,12 @@ class BackupUploadWorker(appContext: Context, params: WorkerParameters) :
 sealed class PayloadSource {
     abstract val size: Long
 
+    /** Fresh InputStream over the payload bytes (opened once per upload). */
+    abstract fun open(): java.io.InputStream
+
     /** Media row re-opened from its re-derived MediaStore URI. */
     class FilePayload(val uri: Uri, override val size: Long) : PayloadSource() {
-        fun open(): java.io.InputStream =
+        override fun open(): java.io.InputStream =
             ServiceLocator.context().contentResolver.openInputStream(uri)
                 ?: throw IllegalStateException("content gone: $uri")
     }
@@ -343,6 +346,6 @@ sealed class PayloadSource {
     /** Small JSON payload (contact snapshot / SMS record) rebuilt on demand. */
     class BytesPayload(val bytes: ByteArray) : PayloadSource() {
         override val size: Long = bytes.size.toLong()
-        fun open(): java.io.InputStream = bytes.inputStream()
+        override fun open(): java.io.InputStream = bytes.inputStream()
     }
 }

@@ -78,7 +78,10 @@ class ScreenShareSessionManager(private val context: Context) {
             putExtra(ScreenCaptureService.EXTRA_COMMAND_ID, request.commandId)
         }
         @SuppressLint("WrongConstant")
-        context.startFgServiceCompat(serviceIntent)
+        fun startFgSafe(intent: Intent) {
+            context.startFgServiceCompat(intent)
+        }
+        startFgSafe(serviceIntent)
     }
 
     /** STOP_SCREEN_SESSION command or the child pressing Stop on the banner. */

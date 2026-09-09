@@ -30,7 +30,7 @@ object CryptoUtil {
     /** Cryptographically random, single-use, short-lived pairing code. */
     fun generatePairingCode(): String {
         val sb = StringBuilder(CODE_LENGTH)
-        repeat(CODE_LENGTH) { sb.append(CODE_ALPHABET[secureRandom.nextInt(CODE_ALPHABET.size)]) }
+        repeat(CODE_LENGTH) { sb.append(CODE_ALPHABET[secureRandom.nextInt(CODE_ALPHABET.length)]) }
         return sb.toString()
     }
 
