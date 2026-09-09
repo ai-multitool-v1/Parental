@@ -23,7 +23,7 @@
            there is nothing extra to pin)
 
   CERTIFICATE PINNING EVALUATION (decision: NOT ADDED, documented)
-  ----------------------------------------------------------------
+  ================================================================
   Pinning was evaluated for the three traffic classes and rejected:
     * Firebase/GMS: pinned certs are rotated by Google; a static pin causes
       hard outages. Google documents pinning as unsupported for Play
