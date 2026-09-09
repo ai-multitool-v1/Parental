@@ -41,11 +41,11 @@ import {
   enforceRateLimit,
   optionalString,
   requireDeviceId,
+  requirePairingCode,
   requireSignedIn,
-  requireString,
 } from "../lib/verify";
 import { writeAudit } from "../lib/audit";
-import { PAIRING_CODE_LENGTH, REGION } from "../lib/constants";
+import { REGION } from "../lib/constants";
 import { ensureChildDek, isKekConfigured } from "../lib/backupKey";
 
 export const confirmPairing = onCall(
@@ -60,7 +60,7 @@ export const confirmPairing = onCall(
     );
 
     const data = (request.data ?? {}) as Record<string, unknown>;
-    const code = requireString(data["code"], "code", PAIRING_CODE_LENGTH);
+    const code = requirePairingCode(data["code"]);
     const deviceId = requireDeviceId(data["deviceId"]);
     const deviceName = optionalString(data["deviceName"], "deviceName", 64);
 

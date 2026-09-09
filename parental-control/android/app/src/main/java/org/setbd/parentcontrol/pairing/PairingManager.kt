@@ -2,55 +2,48 @@ package org.setbd.parentcontrol.pairing
 
 import android.content.Context
 import android.os.Build
-import org.setbd.parentcontrol.BuildConfig
-import org.setbd.parentcontrol.auth.AuthRepository
-import org.setbd.parentcontrol.di.ServiceLocator
-import org.setbd.parentcontrol.security.AuditLogger
-import org.setbd.parentcontrol.security.CryptoUtil
-import com.google.firebase.firestore.FieldValue
-import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.ListenerRegistration
-import com.google.firebase.firestore.Source
-import com.google.firebase.Timestamp
+import com.google.firebase.FirebaseException
+import com.google.firebase.FirebaseNetworkException
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.functions.FirebaseFunctionsException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
+import org.setbd.parentcontrol.auth.AuthRepository
+import org.setbd.parentcontrol.di.ServiceLocator
+import org.setbd.parentcontrol.security.AuditLogger
+import com.google.firebase.functions.FirebaseFunctions
 
 /** Lifecycle of the pairing flow as rendered by [PairingScreen]. */
 sealed class PairingState {
+    /** Waiting for the child to type the code generated on the dashboard. */
     data object Idle : PairingState()
-    data object Generating : PairingState()
-    data class WaitingForApproval(val code: String, val expiresAtMs: Long) : PairingState()
+    /** Contacting the server to confirm the entered code. */
+    data object Confirming : PairingState()
+    /** Server confirmed; device claims + profile are set. */
     data object Approved : PairingState()
-    data object Expired : PairingState()
     data class Failed(val message: String) : PairingState()
 }
 
 /**
- * Secure, single-use, short-lived pairing between the child device and the
- * parent dashboard.
+ * Secure pairing, SERVER-SIDE contract (v2):
  *
- * Flow:
- *  1. Child generates a cryptographically random 8-char code
- *     ([CryptoUtil.generatePairingCode], [SecureRandom]).
- *  2. Code is stored at `pairingCodes/{code}` as
- *     `{deviceId, childUid, createdAt, expiresAt(+5 min), used:false}`.
- *  3. Parent types the code in the dashboard. The parent backend verifies TTL
- *     & single-use and writes `{approved:true, parentUid}` to the same doc and
- *     creates `devices/{deviceId}/parents/{parentUid}`.
- *  4. This class listens on the code doc; on approval it finalizes: marks the
- *     code `used:true`, upserts the `devices/{deviceId}` profile doc, flips
- *     the local `paired` flag and hands control to [ServiceLocator.onPaired].
+ *   1. PARENT dashboard → callable `generatePairingCode` → server writes
+ *      `pairingCodes/{code}` (5-min TTL, single-use). Clients can NEVER read
+ *      or write pairingCodes (firestore.rules deny all) — the code itself is
+ *      the only shared secret.
+ *   2. CHILD device (this class) → signs in anonymously → callable
+ *      `confirmPairing(code, deviceId, deviceName)` → the SERVER atomically
+ *      creates devices/{deviceId} + parents link + children/{uid}, marks the
+ *      code used, and sets custom claims {deviceRole: "childDevice", deviceId}.
+ *   3. We force a token refresh to pick the claims up, flip the local
+ *      `paired` flag and hand control to [ServiceLocator.onPaired].
  *
  * SAFETY: device identity is the stored random UUID deviceId — never the IMEI.
- * The code alone grants nothing: the parent side must authenticate and the
- * Firestore rules verify the childUid matches the code.
+ * The code grants nothing without a verified device identity + server-side
+ * TTL/single-use checks; takeover protection lives in confirmPairing.
  */
 class PairingManager(
     context: Context,
@@ -63,164 +56,95 @@ class PairingManager(
         ServiceLocator.auditLogger,
     )
 
-    private val firestore = FirebaseFirestore.getInstance()
+    private val functions: FirebaseFunctions = FirebaseFunctions.getInstance()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private val _state = MutableStateFlow<PairingState>(PairingState.Idle)
-    val state: StateFlow<PairingState> = _state.asStateFlow()
-
-    private var codeDoc: String? = null
-    private var approvalListener: ListenerRegistration? = null
+    val state: kotlinx.coroutines.flow.StateFlow<PairingState> = _state
 
     val isPaired: Boolean get() = ServiceLocator.secureStore.isPaired()
 
     /**
-     * Generates a fresh code and waits for parent approval.
-     * Safe to call repeatedly (cancels any previous attempt first).
+     * Confirms the code the parent read out from the dashboard.
+     * Safe to call repeatedly (state machine resets each attempt).
      */
-    fun startPairing() {
-        cancelPairing(clearState = false)
-        _state.value = PairingState.Generating
-        scope.launch {
-            val childUid = auth.ensureSignedIn()
-            if (childUid == null) {
-                _state.value = PairingState.Failed("Sign-in failed — check internet and try again.")
-                return@launch
-            }
-            try {
-                val code = CryptoUtil.generatePairingCode()
-                val expiresAt = Timestamp(System.currentTimeMillis() / 1000 + PAIRING_TTL_SECONDS, 0)
-                firestore.collection(COLLECTION_PAIRING_CODES).document(code).set(
-                    mapOf(
-                        FIELD_DEVICE_ID to ServiceLocator.deviceId,
-                        FIELD_CHILD_UID to childUid,
-                        FIELD_CREATED_AT to FieldValue.serverTimestamp(),
-                        FIELD_EXPIRES_AT to expiresAt,
-                        FIELD_USED to false,
-                        FIELD_MODEL to Build.MODEL,
-                        FIELD_ANDROID_VERSION to Build.VERSION.RELEASE,
-                        FIELD_APP_VERSION to BuildConfig.VERSION_NAME,
-                    )
-                ).await()
-
-                codeDoc = code
-                _state.value = PairingState.WaitingForApproval(
-                    code = code,
-                    expiresAtMs = System.currentTimeMillis() + PAIRING_TTL_SECONDS * 1000L,
-                )
-                listenForApproval(code)
-                scheduleExpiryCheck(code)
-            } catch (e: Exception) {
-                _state.value = PairingState.Failed(e.message ?: "Pairing failed")
-            }
-        }
-    }
-
-    /** Listens for the parent writing `{approved:true, parentUid}` on the code doc. */
-    private fun listenForApproval(code: String) {
-        approvalListener = firestore.collection(COLLECTION_PAIRING_CODES).document(code)
-            .addSnapshotListener { snapshot, error ->
-                if (error != null) return@addSnapshotListener
-                val data = snapshot?.data ?: return@addSnapshotListener
-                val approved = data[FIELD_APPROVED] == true
-                val parentUid = data[FIELD_PARENT_UID] as? String
-                if (approved && !parentUid.isNullOrBlank()) {
-                    scope.launch { finalizePairing(code, parentUid) }
-                }
-            }
-    }
-
-    /** Finalizes pairing after parent approval (marks code used, writes profile). */
-    private suspend fun finalizePairing(code: String, parentUid: String) {
-        try {
-            // Transactionally flip used:false -> used:true so a stolen code
-            // cannot be approved twice (single-use guarantee).
-            val codeRef = firestore.collection(COLLECTION_PAIRING_CODES).document(code)
-            firestore.runTransaction { tx ->
-                val snap = tx.get(codeRef)
-                if (snap.getBoolean(FIELD_USED) == true) {
-                    // Already consumed elsewhere: abort silently; rules also guard this.
-                    return@runTransaction null
-                }
-                tx.update(codeRef, mapOf(FIELD_USED to true, FIELD_APPROVED_BY to parentUid))
-                null
-            }.await()
-
-            // Upsert the device profile doc the whole platform keys off.
-            firestore.collection(COLLECTION_DEVICES).document(ServiceLocator.deviceId).set(
-                mapOf(
-                    FIELD_DEVICE_ID to ServiceLocator.deviceId,
-                    FIELD_CHILD_UID to auth.childUid.value,
-                    FIELD_MODEL to Build.MODEL,
-                    FIELD_MANUFACTURER to Build.MANUFACTURER,
-                    FIELD_ANDROID_VERSION to Build.VERSION.RELEASE,
-                    FIELD_APP_VERSION to BuildConfig.VERSION_NAME,
-                    FIELD_PAIRED to true,
-                    FIELD_PAIRED_AT to FieldValue.serverTimestamp(),
-                    FIELD_LAST_SEEN_AT to FieldValue.serverTimestamp(),
-                ),
-                com.google.firebase.firestore.SetOptions.merge(),
-            ).await()
-
-            ServiceLocator.secureStore.setPaired(true)
-            auditLogger.log(
-                actorUid = auth.childUid.value,
-                action = AuditLogger.ACTION_PAIRING_APPROVED,
-                result = "parentUid=$parentUid",
+    fun submitCode(rawCode: String) {
+        // Uppercase + strip separators/spaces: parents read codes aloud.
+        val code = rawCode.uppercase().filter { it.isLetterOrDigit() }
+        if (code.length != CODE_LENGTH || !code.all { it in CODE_ALPHABET }) {
+            _state.value = PairingState.Failed(
+                "Enter the 8-character code from the parent dashboard (no 0/O/1/I). " +
+                    "/ ড্যাশবোর্ডের ৮-অক্ষরের কোডটি লিখুন।"
             )
-            _state.value = PairingState.Approved
-            ServiceLocator.onPaired()
-        } catch (e: Exception) {
-            _state.value = PairingState.Failed(e.message ?: "Pairing failed")
+            return
         }
-    }
 
-    /** Local TTL watchdog — flips to [PairingState.Expired] if nobody approves in 5 min. */
-    private fun scheduleExpiryCheck(code: String) {
+        _state.value = PairingState.Confirming
         scope.launch {
-            delay(PAIRING_TTL_SECONDS * 1000L)
-            if (_state.value is PairingState.WaitingForApproval) {
-                _state.value = PairingState.Expired
-                runCatching {
-                    firestore.collection(COLLECTION_PAIRING_CODES).document(code).delete().await()
+            when (val signIn = auth.ensureSignedInDetailed()) {
+                is AuthRepository.SignInResult.Failure -> {
+                    _state.value = PairingState.Failed(
+                        "Sign-in failed — ${signIn.userMessage}"
+                    )
                 }
-                stopListening()
+                is AuthRepository.SignInResult.Success -> {
+                    try {
+                        @Suppress("UNCHECKED_CAST")
+                        val result = functions.getHttpsCallable("confirmPairing")
+                            .call(
+                                mapOf(
+                                    "code" to code,
+                                    "deviceId" to ServiceLocator.deviceId,
+                                    "deviceName" to deviceName(),
+                                )
+                            )
+                            .await()
+                            .data as? Map<String, Any?>
+
+                        // Pick up {deviceRole, deviceId} custom claims NOW —
+                        // rules deny device telemetry until the fresh token.
+                        auth.refreshIdToken()
+
+                        val parentUid = result?.get("parentUid") as? String
+                        ServiceLocator.secureStore.setPaired(true)
+                        auditLogger.log(
+                            actorUid = auth.childUid.value,
+                            action = AuditLogger.ACTION_PAIRING_APPROVED,
+                            result = "ALLOWED",
+                            details = mapOf("parentUid" to parentUid),
+                        )
+                        _state.value = PairingState.Approved
+                        ServiceLocator.onPaired()
+                    } catch (e: Exception) {
+                        _state.value = PairingState.Failed(describeError(e))
+                    }
+                }
             }
         }
     }
 
-    /** Cancels a pending code (child pressed cancel, or a new code is requested). */
-    fun cancelPairing(clearState: Boolean = true) {
-        stopListening()
-        val code = codeDoc
-        codeDoc = null
-        if (code != null) {
-            scope.launch {
-                runCatching {
-                    firestore.collection(COLLECTION_PAIRING_CODES).document(code).delete().await()
-                }
-            }
-        }
-        if (clearState) _state.value = PairingState.Idle
+    /** Resets to the input state (child pressed back/retry). */
+    fun cancelPairing() {
+        _state.value = PairingState.Idle
     }
 
     /**
-     * Unpair (Settings): clears the local pairing, notifies the platform, and
-     * signs out. The parent dashboard sees the device flip to unpaired.
+     * Unpair (Settings): clears the local pairing and asks the server side to
+     * flip the device doc (best-effort — the identity delete trigger is the
+     * authoritative cleanup when the child account is removed).
      */
     fun unpair() {
         val deviceId = ServiceLocator.deviceId
         ServiceLocator.secureStore.setPaired(false)
         scope.launch {
             runCatching {
-                firestore.collection(COLLECTION_DEVICES).document(deviceId).update(
-                    mapOf(FIELD_PAIRED to false, FIELD_UNPAIRED_AT to FieldValue.serverTimestamp())
-                ).await()
+                ServiceLocator.policyRepository.stop()
             }
             auditLogger.log(
                 actorUid = auth.childUid.value,
                 action = AuditLogger.ACTION_UNPAIRED,
-                result = "by_child",
+                result = "INFO",
+                details = mapOf("by" to "child"),
             )
             auth.signOut()
         }
@@ -232,41 +156,56 @@ class PairingManager(
         // (e.g. parent revoked pairing) doesn't keep the app in dashboard mode.
         scope.launch {
             try {
-                val doc = firestore.collection(COLLECTION_DEVICES)
+                val doc = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                    .collection("devices")
                     .document(ServiceLocator.deviceId)
-                    .get(Source.SERVER)
+                    .get(com.google.firebase.firestore.Source.SERVER)
                     .await()
-                if (doc.exists() && doc.getBoolean(FIELD_PAIRED) != true) {
+                if (doc.exists() && doc.getBoolean("paired") != true &&
+                    doc.getString("status") == "UNPAIRED"
+                ) {
                     ServiceLocator.secureStore.setPaired(false)
                 }
             } catch (_: Exception) { /* offline: keep local flag */ }
         }
     }
 
-    private fun stopListening() {
-        approvalListener?.remove()
-        approvalListener = null
+    private fun deviceName(): String =
+        "${Build.MANUFACTURER} ${Build.MODEL}".trim().take(64)
+
+    /** Callable/transport errors → actionable message (never raw stack traces). */
+    private fun describeError(e: Exception): String {
+        if (e is FirebaseNetworkException) {
+            return "No internet connection. Connect and try again. / ইন্টারনেট সংযোগ নেই — আবার চেষ্টা করুন।"
+        }
+        if (e is FirebaseFunctionsException) {
+            return when (e.code) {
+                FirebaseFunctionsException.Code.NOT_FOUND ->
+                    "Invalid code — check it on the dashboard and try again. / কোড ভুল — ড্যাশবোর্ড মিলিয়ে আবার লিখুন।"
+                FirebaseFunctionsException.Code.FAILED_PRECONDITION ->
+                    e.message ?: "This code has expired or was already used. / কোডের মেয়াদ শেষ বা ব্যবহৃত।"
+                FirebaseFunctionsException.Code.PERMISSION_DENIED ->
+                    e.message ?: "Not allowed to pair this device. / এই ডিভাইস পেয়ার করা যাচ্ছে না।"
+                FirebaseFunctionsException.Code.ALREADY_EXISTS ->
+                    "This device is already paired to another family. Unpair first or contact your parent. / ডিভাইসটি আগে থেকেই পেয়ারড।"
+                FirebaseFunctionsException.Code.RESOURCE_EXHAUSTED ->
+                    e.message ?: "Too many attempts. Please wait. / অনেকবার চেষ্টা — একটু অপেক্ষা করুন।"
+                FirebaseFunctionsException.Code.UNAUTHENTICATED ->
+                    "Sign-in expired. Try again. / সাইন-ইন শেষ — আবার চেষ্টা করুন।"
+                else ->
+                    e.message ?: "Pairing failed. Try again. / পেয়ারিং ব্যর্থ — আবার চেষ্টা করুন।"
+            }
+        }
+        if (e is FirebaseException) {
+            return "Pairing failed: ${e.message ?: "unknown error"}. Try again. / পেয়ারিং ব্যর্থ — আবার চেষ্টা করুন।"
+        }
+        return "Pairing failed: ${e.javaClass.simpleName}. Try again. / পেয়ারিং ব্যর্থ — আবার চেষ্টা করুন।"
     }
 
     private companion object {
-        const val COLLECTION_PAIRING_CODES = "pairingCodes"
-        const val COLLECTION_DEVICES = "devices"
-        const val FIELD_DEVICE_ID = "deviceId"
-        const val FIELD_CHILD_UID = "childUid"
-        const val FIELD_PARENT_UID = "parentUid"
-        const val FIELD_APPROVED = "approved"
-        const val FIELD_APPROVED_BY = "approvedBy"
-        const val FIELD_CREATED_AT = "createdAt"
-        const val FIELD_EXPIRES_AT = "expiresAt"
-        const val FIELD_USED = "used"
-        const val FIELD_MODEL = "model"
-        const val FIELD_MANUFACTURER = "manufacturer"
-        const val FIELD_ANDROID_VERSION = "androidVersion"
-        const val FIELD_APP_VERSION = "appVersion"
-        const val FIELD_PAIRED = "paired"
-        const val FIELD_PAIRED_AT = "pairedAt"
-        const val FIELD_LAST_SEEN_AT = "lastSeenAt"
-        const val FIELD_UNPAIRED_AT = "unpairedAt"
-        const val PAIRING_TTL_SECONDS = 5 * 60L
+        const val CODE_LENGTH = 8
+        /** Mirror of the server alphabet (no 0/O/1/I). */
+        const val CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+        const val TAG = "PairingManager"
     }
 }

@@ -18,7 +18,8 @@ class PairingViewModel(
 
     val isAlreadyPaired: Boolean get() = pairingManager.isPaired
 
-    fun startPairing() = pairingManager.startPairing()
+    /** Child submits the 8-char code generated on the parent dashboard. */
+    fun submitCode(code: String) = pairingManager.submitCode(code)
 
     fun cancelPairing() = pairingManager.cancelPairing()
 

@@ -12,12 +12,12 @@
     <string name="onboarding_get_started">শুরু করুন</string>
 
     <string name="pairing_title">অভিভাবকের সাথে সংযোগ করুন</string>
-    <string name="pairing_instructions">অভিভাবককে ফ্যামিলি সেফটি ড্যাশবোর্ড খুলে এই কোডটি দিতে বলুন। কোডটি ৫ মিনিট কাজ করবে এবং শুধু একবার ব্যবহার করা যাবে।</string>
-    <string name="pairing_waiting">অভিভাবকের অনুমোদনের অপেক্ষায়…</string>
+    <string name="pairing_instructions">অভিভাবককে ফ্যামিলি সেফটি ড্যাশবোর্ডের Devices-এ গিয়ে "কোড তৈরি করুন" চাপতে বলুন, তারপর ওই ৮-অক্ষরের কোডটি এখানে লিখুন। কোডটি ৫ মিনিট কাজ করবে এবং শুধু একবার ব্যবহার করা যাবে।</string>
+    <string name="pairing_code_hint">পেয়ারিং কোড</string>
+    <string name="pairing_code_supporting">ড্যাশবোর্ড থেকে ৮ অক্ষর — শুধু ইংরেজি অক্ষর ও সংখ্যা</string>
+    <string name="pairing_connect">সংযোগ করুন</string>
     <string name="pairing_approved">সংযুক্ত! প্রস্তুত হচ্ছে…</string>
-    <string name="pairing_cancel">কোড বাতিল করুন</string>
-    <string name="pairing_new_code">নতুন কোড তৈরি করুন</string>
-    <string name="pairing_expired">কোডের মেয়াদ শেষ। নতুন কোড তৈরি করুন।</string>
+    <string name="pairing_cancel">বাতিল</string>
     <string name="pairing_failed">পেয়ারিং ব্যর্থ হয়েছে। আবার চেষ্টা করুন।</string>
 
     <string name="dashboard_title">আমার ডিভাইস</string>

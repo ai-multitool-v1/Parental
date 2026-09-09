@@ -13,12 +13,12 @@
 
     <!-- ============================= Pairing ============================== -->
     <string name="pairing_title">Connect to your parent</string>
-    <string name="pairing_instructions">Ask your parent to open the Family Safety dashboard and enter this code. The code works for 5 minutes and can be used only once.</string>
-    <string name="pairing_waiting">Waiting for your parent to approve…</string>
+    <string name="pairing_instructions">Ask your parent to open the Family Safety dashboard, tap "Generate code" in Devices, then type that 8-character code here. The code works for 5 minutes and can be used only once.</string>
+    <string name="pairing_code_hint">Pairing code</string>
+    <string name="pairing_code_supporting">8 characters from the dashboard — letters and numbers only</string>
+    <string name="pairing_connect">Connect</string>
     <string name="pairing_approved">Connected! Setting things up…</string>
-    <string name="pairing_cancel">Cancel code</string>
-    <string name="pairing_new_code">Make a new code</string>
-    <string name="pairing_expired">The code expired. Please make a new one.</string>
+    <string name="pairing_cancel">Cancel</string>
     <string name="pairing_failed">Pairing failed. Please try again.</string>
 
     <!-- ========================= Main dashboard =========================== -->

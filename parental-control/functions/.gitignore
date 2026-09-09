@@ -1,5 +1,6 @@
-# Compiled Cloud Functions output
-lib/
+# Compiled Cloud Functions output (anchored: /lib = tsc outDir; do NOT let
+# this swallow src/lib — that directory is REAL source code)
+/lib/
 node_modules/
 *.log
 .env
