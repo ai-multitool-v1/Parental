@@ -1,0 +1,35 @@
+{
+  "_comment": "Rename this file to google-services.json (app/google-services.json) after filling in real values from the Firebase console. NEVER commit real keys to source control. This placeholder shows the exact shape the google-services plugin (4.4.x) expects.",
+  "project_info": {
+    "project_number": "000000000000",
+    "project_id": "familysafety-demo",
+    "storage_bucket": "familysafety-demo.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:000000000000:android:0000000000000000000000",
+        "android_client_info": {
+          "package_name": "org.setbd.parentcontrol"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "000000000000-00000000000000000000000000000000.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDEMO-REPLACE-ME-000000000000000"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

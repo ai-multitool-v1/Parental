@@ -1,0 +1,17 @@
+<device-admin xmlns:android="http://schemas.android.com/apk/res/android">
+    <!--
+      Device-admin policies requested by the Family Safety child app.
+      Deliberately MINIMAL (security audit v1.1.1): ONLY force-lock (remote
+      LOCK_DEVICE command) and watch-login (failed-unlock audit entries).
+      <limit-password> was REMOVED — no code path uses password-quality
+      policies, and every unused declared policy widens the admin surface
+      an attacker could abuse if the profile were ever compromised.
+      No wipe, no password reset, no encryption policy, no camera disable
+      (camera use is consent-based). Activation always happens through the
+      standard, visible system dialog.
+    -->
+    <uses-policies>
+        <watch-login />
+        <force-lock />
+    </uses-policies>
+</device-admin>

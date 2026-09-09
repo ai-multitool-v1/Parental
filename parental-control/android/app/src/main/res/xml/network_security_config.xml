@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  network_security_config.xml (v1.4.1 security review)
+
+  WHY THIS EXISTS
+  ===============
+  The manifest already sets android:usesCleartextTraffic="false", but that
+  attribute is a single global switch: on some OEM Android 8/9 builds it is
+  inconsistently honoured for certain HTTP stacks, and it cannot express
+  per-domain intent. This config makes the policy explicit, auditable and
+  forward-compatible:
+
+    1. BASELINE: cleartext HTTP is denied for EVERY destination — including
+       user-added CAs (traffic must be TLS with system-trusted certs only).
+    2. No domain is ever exempted. The app talks to:
+         - Firebase Auth / Firestore / FCM  (Google-operated, TLS-only,
+           cert handling owned by Google Play services — GMS traffic is
+           already validated by the platform, custom pinning there breaks
+           Play-services updates and is explicitly NOT recommended)
+         - R2 presigned PUT/GET endpoints
+           (https://<account>.r2.cloudflarestorage.com — TLS-only, signed,
+           short-lived URLs; the URL itself carries the authorization, so
+           there is nothing extra to pin)
+
+  CERTIFICATE PINNING EVALUATION (decision: NOT ADDED, documented)
+  ----------------------------------------------------------------
+  Pinning was evaluated for the three traffic classes and rejected:
+    * Firebase/GMS: pinned certs are rotated by Google; a static pin causes
+      hard outages. Google documents pinning as unsupported for Play
+      services traffic.
+    * R2/cloudflarestorage.com: Cloudflare rotates leaf certs; a pin would
+      break uploads on rotation. Authorization here is the presigned URL,
+      minted server-side with ≤10-minute lifetime — replay risk is bounded
+      by the signature, not by pinning.
+    * Custom endpoints: none exist. If a first-party API is ever added,
+      pin its leaf + backup key there via pin-set and update this file.
+
+  If a future build NEEDS pinning (e.g. self-hosted TURN/API), add a
+  <pin-set> scoped to that exact domain — never a global pin.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <!-- System CAs ONLY: user-installed certificates cannot be used
+                 to MITM the app (anti-tamper hardening). -->
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

@@ -1,0 +1,591 @@
+rules_version = '2';
+
+/**
+ * ──────────────────────────────────────────────────────────────────────────
+ *  Parental Control & Family Safety Platform — Firestore Security Rules
+ * ──────────────────────────────────────────────────────────────────────────
+ *
+ *  DESIGN PRINCIPLES
+ *  1. SERVER-AUTHORITATIVE: every privileged mutation runs in Cloud Functions
+ *     via the Admin SDK, which BYPASSES these rules entirely. Client-side
+ *     rules below therefore only ever grant the narrow read/telemetry-write
+ *     surface that the product genuinely needs. When in doubt: deny.
+ *  2. NO SELF-ESCALATION: no client can change parentUid / deviceId / role /
+ *     permissions / ownership of any document. Update rules use the
+ *     diff().affectedKeys().hasOnly([...]) pattern to whitelist exactly which
+ *     fields a writer may touch, and identity fields are never in those lists.
+ *  3. TENANT ISOLATION: Parent A can only reach devices where the pairing
+ *     link devices/{deviceId}/parents/{parentA} exists. For Parent B that
+ *     document does not exist, so every isParentOf() check fails closed.
+ *  4. DEVICE IDENTITY = CUSTOM CLAIMS (chosen approach): at pairing time the
+ *     confirmPairing function calls setCustomUserClaims(uid,
+ *     { deviceRole: "childDevice", deviceId: "<uuid>" }).
+ *     isChildDevice() checks those claims. Claims cannot be written by
+ *     clients, survive token refresh, and avoid a per-request lookup of a
+ *     tokens/{tokenHash} document. IMEI / serial numbers are never used.
+ *  5. TAMPER EVIDENCE: audit logs are append-only for the device, and
+ *     READABLE ONLY BY THE DEVELOPER ADMIN (v1.4.0/v1.4.1 — parents have no
+ *     read access to activity logs, in rules, not just in the UI).
+ *
+ *  NOTE ON pairingCodes: clients may NEVER read or write them. The parent
+ *  receives the code in the generatePairingCode callable RESULT; the child
+ *  submits it to confirmPairing which validates it server-side. (The earlier
+ *  idea of the child app polling pairingCodes/{code} was replaced by this —
+ *  it avoids exposing codes to client reads entirely.)
+ */
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    /* ═══════════════════════════ helpers ═══════════════════════════ */
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    // Parent pairing link — the single source of truth for parent access.
+    function isParentOf(deviceId, parentUid) {
+      return signedIn() &&
+        exists(/databases/$(database)/documents/devices/$(deviceId)/parents/$(parentUid));
+    }
+
+    // Child device identity via custom claims set at pairing (Admin SDK).
+    // Guarded with `in` checks so a token without claims can never error the
+    // expression into an unexpected state — it simply evaluates to false.
+    function isChildDevice(deviceId) {
+      return signedIn() &&
+        'deviceRole' in request.auth.token &&
+        request.auth.token.deviceRole == 'childDevice' &&
+        'deviceId' in request.auth.token &&
+        request.auth.token.deviceId == deviceId;
+    }
+
+    // v1.2.0 — Developer Admin. The `admin` custom claim is set EXCLUSIVELY by
+    // the Admin SDK (functions/scripts/setAdminClaim.ts); no client, no rules
+    // write and no Firestore document can create it. Admin read access is
+    // additive — every deny below still applies to admins (deny-by-default).
+    function isAdmin() {
+      return signedIn() &&
+        'admin' in request.auth.token &&
+        request.auth.token.admin == true;
+    }
+
+    // Field-diff helper for update whitelisting.
+    function affectedKeys() {
+      return request.resource.data.diff(resource.data).affectedKeys();
+    }
+
+    /* ═══════════════════════ pairingCodes ══════════════════════════ */
+
+    // Codes are server-issued secrets. generatePairingCode returns the code
+    // to the parent in the callable result; confirmPairing validates it with
+    // the Admin SDK. Zero client surface (prevents enumeration/brute-force).
+    match /pairingCodes/{code} {
+      allow read, write: if false;
+    }
+
+    /* ═════════════════════════ users ═══════════════════════════════ */
+
+    // Parent profiles. Signup writes its own doc (validated shape); only
+    // cosmetic fields are updatable; deletion is ONLY via the onUserDeleted
+    // function (GDPR erasure), never by clients.
+    match /users/{parentUid} {
+      function isOwnProfile() {
+        return signedIn() && request.auth.uid == parentUid;
+      }
+
+      // v1.2.0: admins may read every profile (Developer Admin Console —
+      // registered users, last login, ban state). Non-admins unchanged.
+      allow get, list: if isOwnProfile() || isAdmin();
+
+      // Create only at signup, matching the caller's own uid, parent role.
+      allow create: if isOwnProfile() &&
+        request.resource.data.role == 'parent' &&
+        request.resource.data.uid == parentUid &&
+        request.resource.data.createdAt is timestamp;
+
+      // Whitelist of self-serviceable fields — note: role, uid, accountLocked
+      // and mfaEnabled (server-managed) are NOT updatable by clients.
+      allow update: if isOwnProfile() &&
+        affectedKeys().hasOnly(
+          ['displayName', 'photoUrl', 'fcmTokens', 'settings', 'updatedAt']
+        );
+
+      allow delete: if false; // use account deletion → onUserDeleted function
+    }
+
+    /* ═══════════════════════ children ══════════════════════════════ */
+
+    // Child linkage docs are written only by pairing/unpair functions.
+    match /children/{childUid} {
+      // A parent may read children linked to them (supports list queries on
+      // parentUid). Write: false for ALL clients — no client can re-point a
+      // child at another device or parent.
+      allow read: if signedIn() && resource.data.parentUid == request.auth.uid;
+      allow write: if false;
+
+      /* ── children/{uid}/backupKeys — backup DEK escrow (v1.3.0) ──
+         The data-encryption key (DEK) for this child's encrypted backups,
+         stored ONLY in wrapped form (AES-256-GCM under a KEK held in
+         Secret Manager — never in Firestore in plaintext, never in any
+         APK/browser). Unwrapping happens exclusively inside the
+         backupGetKey callable after claim/link verification; every
+         unwrap is rate-limited and audit-logged. ZERO client surface. */
+      match /backupKeys/{keyId} {
+        allow read, write: if false;
+      }
+
+      /* ── children/{uid}/backupIndex — cross-device backup registry ──
+         Written only by backup functions (Admin SDK). Lets a parent (and
+         ONLY a parent currently linked to that exact device) discover
+         which devices hold restorable backups for this child — the phone-
+         reset/restore path. Items themselves stay under their device. */
+      match /backupIndex/{deviceId} {
+        allow read: if signedIn() && isParentOf(deviceId, request.auth.uid);
+        allow write: if false;
+      }
+    }
+
+    /* ═══════════════════════ devices ═══════════════════════════════ */
+
+    match /devices/{deviceId} {
+      function parentOfDevice() {
+        return signedIn() && isParentOf(deviceId, request.auth.uid);
+      }
+      function childOfDevice() {
+        return isChildDevice(deviceId);
+      }
+
+      // READ: the paired parent, or the device itself — and, v1.2.0, any
+      // platform admin (Developer Admin Console device registry).
+      // LIST: parentOfDevice() cannot be proven for unfiltered queries, so
+      // parents must filter by ownerParentUid (their uid) to list devices.
+      allow get: if parentOfDevice() || childOfDevice() || isAdmin();
+      allow list: if parentOfDevice() ||
+        (signedIn() && resource.data.ownerParentUid == request.auth.uid) ||
+        isAdmin();
+
+      // CREATE: false — devices exist only through confirmPairing (Admin SDK).
+      // DELETE: false — unpairing/purging happens through functions.
+      allow create: if false;
+      allow delete: if false;
+
+      // UPDATE: the paired DEVICE may update ONLY its own operational fields
+      // (heartbeat/status/FCM token/permission snapshot/app version/policy
+      // ack). It can NEVER touch deviceId, ownerParentUid, childUid,
+      // pairedAt — i.e. a child cannot re-parent or re-identify itself.
+      // Parents get NO direct device writes at all (edits go via functions).
+      // v1.2.0: a BANNED device loses all write access (telemetry freeze) —
+      // the ban flag itself is only writable by the Admin SDK. The `in` guard
+      // keeps legacy device docs (without the field) fully writable.
+      allow update: if childOfDevice() &&
+        (!('banned' in resource.data) || resource.data.banned != true) &&
+        affectedKeys().hasOnly(
+          ['status', 'fcmToken', 'permissions', 'appVersion',
+           'lastSeenAt', 'policyVersionAcknowledged']
+        ) &&
+        (!affectedKeys().hasAny(['status']) ||
+          request.resource.data.status in ['ACTIVE', 'OFFLINE', 'LOCKED']) &&
+        (!affectedKeys().hasAny(['fcmToken']) ||
+          request.resource.data.fcmToken is string);
+
+      /* ───────────── devices/{id}/parents — pairing links ─────────── */
+      match /parents/{parentUid} {
+        // Read: that parent (to verify its own link), any parent of the
+        // device (co-parent visibility), or the device itself.
+        allow read: if signedIn() && (
+          request.auth.uid == parentUid ||
+          isParentOf(deviceId, request.auth.uid)
+        ) || childOfDevice();
+        // Write: false — pairing links are created/removed ONLY by
+        // confirmPairing / onUserDeleted (Admin SDK). No client can add
+        // itself as a parent, or evict a real one.
+        allow write: if false;
+      }
+
+      /* ───────────── devices/{id}/policies — policy engine ────────── */
+      match /policies/{policyId} {
+        // Policy documents (e.g. policies/current) are readable by the
+        // paired parent and the device (the device must fetch its config),
+        // but written ONLY by functions (policy editor → Admin SDK).
+        allow read: if parentOfDevice() || childOfDevice();
+        allow write: if false;
+      }
+
+      /* ───────────── devices/{id}/commands — command queue ────────── */
+      match /commands/{commandId} {
+        allow read: if parentOfDevice() || childOfDevice();
+
+        // CREATE: false for EVERYONE (parents included!). Commands enter the
+        // queue exclusively through the dispatchCommand callable. This is
+        // what makes "anonymous creates command" and "parent forges another
+        // parent's command" impossible at the rules layer.
+        allow create: if false;
+
+        // UPDATE: the device may ONLY flip status (PENDING → DELIVERED →
+        // EXECUTED/FAILED ack path). It cannot edit type, payload, createdBy,
+        // expiresAt or result — a device cannot launder a command.
+        allow update: if childOfDevice() &&
+          affectedKeys().hasOnly(['status']) &&
+          request.resource.data.status in ['DELIVERED', 'EXECUTED', 'FAILED'];
+
+        allow delete: if false;
+      }
+
+      /* ─────────── devices/{id}/commandResults — device reports ───── */
+      match /commandResults/{resultId} {
+        allow read: if parentOfDevice() || childOfDevice();
+
+        // CREATE/UPDATE: the paired device only, reporting on itself.
+        // The onCommandResult trigger (Admin SDK) does the terminal-state +
+        // replay checks; rules keep the write surface device-only.
+        allow create: if childOfDevice() &&
+          request.resource.data.deviceId == deviceId &&
+          request.resource.data.commandId is string &&
+          request.resource.data.status in ['EXECUTED', 'FAILED'];
+
+        allow update: if childOfDevice() &&
+          affectedKeys().hasOnly(['status', 'result', 'completedAt']);
+
+        allow delete: if false;
+      }
+
+      /* ─────────── devices/{id}/locations — telemetry (append-only) ─ */
+      match /locations/{locationId} {
+        allow read: if parentOfDevice() || childOfDevice();
+
+        // Only the paired device reports its own position. Append-only:
+        // history can never be rewritten or hidden by either side.
+        allow create: if childOfDevice() &&
+          request.resource.data.deviceId == deviceId &&
+          request.resource.data.timestamp is timestamp &&
+          request.resource.data.lat is number &&
+          request.resource.data.lng is number;
+
+        allow update, delete: if false; // purge via retentionPurge only
+      }
+
+      /* ─────────── devices/{id}/appUsage — telemetry (append-only) ── */
+      match /appUsage/{usageId} {
+        allow read: if parentOfDevice() || childOfDevice();
+        // NOTE: device-side telemetry is create-only (append-only). Parents
+        // can never fabricate usage data; the device can never rewrite
+        // history. Retention pruning happens in retentionPurge (Admin SDK).
+        allow create: if childOfDevice() &&
+          request.resource.data.deviceId == deviceId;
+        allow update, delete: if false;
+      }
+
+      /* ────────── devices/{id}/installedApps — device inventory ───── */
+      match /installedApps/{appId} {
+        allow read: if parentOfDevice() || childOfDevice();
+        allow create: if childOfDevice() &&
+          request.resource.data.deviceId == deviceId;
+        allow update, delete: if false;
+      }
+
+      /* ─────────── devices/{id}/notifications — parent messages ───── */
+      match /notifications/{notificationId} {
+        // Read by both sides; written ONLY by sendParentNotification
+        // (Admin SDK). Read receipts flow via commandResults.
+        allow read: if parentOfDevice() || childOfDevice();
+        allow write: if false;
+      }
+
+      /* ────────── devices/{id}/emergencyEvents — SOS pipeline ─────── */
+      match /emergencyEvents/{eventId} {
+        allow read: if parentOfDevice() || childOfDevice();
+
+        // SOS events may ONLY be created by the paired device — a parent
+        // can never fabricate an SOS from their child's device.
+        allow create: if childOfDevice() &&
+          request.resource.data.deviceId == deviceId &&
+          request.resource.data.type in ['SOS', 'SAFETY_CHECK_FAIL'];
+
+        // Parents may only acknowledge (+ audit fields). The child device
+        // cannot alter or withdraw an SOS after the fact.
+        allow update: if parentOfDevice() &&
+          affectedKeys().hasOnly(
+            ['acknowledged', 'acknowledgedAt', 'acknowledgedBy', 'note']
+          ) &&
+          request.resource.data.acknowledgedBy == request.auth.uid;
+
+        allow delete: if false;
+      }
+
+      /* ────────── devices/{id}/sessions — consent state machine ───── */
+      match /sessions/{sessionId} {
+        // Read by both sides. The session DOCUMENT is written ONLY by Cloud
+        // Functions (requestSession / sessionLifecycle / onCommandResult /
+        // endSession callable) — device consent decisions arrive via
+        // commandResults, never by direct session writes. This guarantees
+        // sessions cannot be forged.
+        allow read: if parentOfDevice() || childOfDevice();
+        allow write: if false;
+
+        /* ── sessions/{sid}/signals — WebRTC signaling envelopes ──
+           Peers may only APPEND short, validated envelopes here; the parent
+           listens for from=="child", the child for from=="parent".
+           `from` is cryptographically bound to the caller's real identity
+           (custom claims / parent link), so neither side can spoof the
+           other. Envelopes are create-only (no update/delete/rewrite) and
+           size-capped. Media NEVER passes through Firestore — envelopes are
+           SDP/ICE metadata only. */
+        match /signals/{signalId} {
+          function signalFrom() {
+            return childOfDevice() ? 'child' : 'parent';
+          }
+          function validSignal() {
+            return request.resource.data.keys().hasOnly(
+              ['kind', 'sdp', 'sdpType', 'candidateSdp', 'sdpMid',
+               'sdpMLineIndex', 'from', 'createdAt']
+            ) &&
+            request.resource.data.kind in ['offer', 'answer', 'candidate', 'bye'] &&
+            request.resource.data.from == signalFrom() &&
+            request.resource.data.createdAt == request.time &&
+            (!('sdp' in request.resource.data.keys()) ||
+              (request.resource.data.sdp is string &&
+               request.resource.data.sdp.size() < 32768)) &&
+            (!('candidateSdp' in request.resource.data.keys()) ||
+              (request.resource.data.candidateSdp is string &&
+               request.resource.data.candidateSdp.size() < 2048)) &&
+            (!('sdpMid' in request.resource.data.keys()) ||
+              (request.resource.data.sdpMid is string &&
+               request.resource.data.sdpMid.size() < 64)) &&
+            (!('sdpType' in request.resource.data.keys()) ||
+              (request.resource.data.sdpType is string &&
+               request.resource.data.sdpType.size() < 16));
+          }
+
+          allow read: if parentOfDevice() || childOfDevice();
+          allow create: if (childOfDevice() || parentOfDevice()) && validSignal();
+          allow update, delete: if false;
+        }
+      }
+
+      /* ─────────── devices/{id}/backupPolicy — parent toggles (v1.3.0) ──
+         Per-category backup switches (photos/videos/contacts/sms).
+         Written EXCLUSIVELY by the backupSetPolicy callable (parent link +
+         App Check + audit) — direct client writes are impossible, so a
+         compromised child cannot enable its own backups and a rogue
+         client cannot flip another family's switches. */
+      match /backupPolicy/{policyId} {
+        allow read: if parentOfDevice() || childOfDevice();
+        allow write: if false;
+      }
+
+      /* ─────────── devices/{id}/backupConsent — child consent (v1.3.0) ──
+         The CHILD's own opt-in record per category, written by the child
+         app after the on-device consent dialog. Dual-opt-in model:
+         an upload is eligible only when parent toggle == ON AND the child
+         consented AND the runtime permission is granted. Shape-locked so
+         the device cannot smuggle extra fields or forge timestamps. */
+      match /backupConsent/{docId} {
+        allow read: if parentOfDevice() || childOfDevice();
+        allow create, update: if childOfDevice() &&
+          request.resource.data.keys().hasOnly(['consent', 'updatedAt']) &&
+          request.resource.data.updatedAt == request.time &&
+          request.resource.data.consent is map;
+        allow delete: if false;
+      }
+
+      /* ─────────── devices/{id}/backupItems — metadata ONLY (v1.3.0) ──
+         One doc per backup unit (photo / video / contact snapshot /
+         SMS batch). NO media, contact or SMS CONTENT is ever written to
+         Firestore — content lives encrypted (AES-256-GCM, device-held
+         session) in the PRIVATE R2 bucket addressed by r2Key (which is
+         server-issued by backupCreateUploadUrl, never client-chosen).
+         CREATE: paired device, strict shape, must start as PENDING.
+         UPDATE: paired device may only drive its own state machine
+         (PENDING → UPLOADING → FAILED/CANCELLED); UPLOADED is reachable
+         ONLY through backupCompleteUpload (which verifies the object
+         actually exists in R2) — a device cannot fake a successful
+         backup. DELETE: never (retention functions only). */
+      match /backupItems/{itemId} {
+        function validBackupItemShape() {
+          return request.resource.data.keys().hasOnly(
+            ['deviceId', 'childUid', 'category', 'fileName', 'mimeType',
+             'sizeBytes', 'checksumSha256', 'state', 'attempts',
+             'createdAt', 'updatedAt', 'r2Key', 'ivB64', 'lastErrorCode']
+          ) &&
+          request.resource.data.deviceId == deviceId &&
+          request.resource.data.childUid is string &&
+          request.resource.data.childUid.size() < 128 &&
+          request.resource.data.category in ['photos', 'videos', 'contacts', 'sms'] &&
+          request.resource.data.fileName is string &&
+          request.resource.data.fileName.size() > 0 &&
+          request.resource.data.fileName.size() < 512 &&
+          request.resource.data.mimeType is string &&
+          request.resource.data.mimeType.size() < 128 &&
+          request.resource.data.sizeBytes is number &&
+          request.resource.data.sizeBytes >= 0 &&
+          request.resource.data.sizeBytes < 536870912 && // 512 MiB single-object cap
+          request.resource.data.checksumSha256 is string &&
+          request.resource.data.checksumSha256.size() == 64 &&
+          request.resource.data.attempts is number;
+        }
+
+        allow read: if parentOfDevice() || childOfDevice();
+
+        allow create: if childOfDevice() &&
+          validBackupItemShape() &&
+          request.resource.data.state == 'PENDING' &&
+          !("r2Key" in request.resource.data.keys()) && // r2Key is server-issued only
+          !("ivB64" in request.resource.data.keys());
+
+        allow update: if childOfDevice() &&
+          affectedKeys().hasOnly(
+            ['state', 'attempts', 'lastErrorCode', 'updatedAt']
+          ) &&
+          request.resource.data.state in ['PENDING', 'UPLOADING', 'FAILED', 'CANCELLED'] &&
+          request.resource.data.category == resource.data.category &&
+          request.resource.data.deviceId == resource.data.deviceId &&
+          request.resource.data.sizeBytes == resource.data.sizeBytes;
+
+        allow delete: if false;
+      }
+
+      /* ─────────── devices/{id}/backupStats — aggregates (v1.3.0) ──
+         Storage usage / last-backup / counters. Maintained ONLY by
+         backup functions (backupCompleteUpload transaction) so neither
+         side can inflate or hide usage. */
+      match /backupStats/{statId} {
+        allow read: if parentOfDevice() || childOfDevice();
+        allow write: if false;
+      }
+
+      /* ────────── devices/{id}/auditLogs — tamper-evident trail ───── */
+      match /auditLogs/{logId} {
+        // v1.4.0 (server-enforced v1.4.1): ACTIVITY LOGS ARE ADMIN-ONLY.
+        // Parents can NOT read audit trails — not from the dashboard UI
+        // (removed) and NOT via direct Firestore reads (this rule). Only
+        // the Developer Admin (admin custom claim) may read them. The
+        // device may still APPEND its own entries (createdAt == request.time
+        // prevents history forgery); updates/deletes are denied for everyone.
+        allow read: if isAdmin();
+
+        // The paired device may APPEND entries about its own actions.
+        // createdAt must equal request.time — the device cannot forge
+        // historical timestamps.
+        allow create: if childOfDevice() &&
+          request.resource.data.deviceId == deviceId &&
+          request.resource.data.createdAt == request.time;
+
+        // Append-only: nobody updates or deletes. (Retention purge is a
+        // scheduled function using the Admin SDK, which bypasses rules.)
+        allow update, delete: if false;
+      }
+    }
+
+    /* ═══════════════ top-level emergencyAlerts (denormalized) ══════ */
+
+    match /emergencyAlerts/{eventId} {
+      // Only parents linked on the alert may read/acknowledge it.
+      function alertParent() {
+        return signedIn() && request.auth.uid in resource.data.parentUids;
+      }
+
+      allow read: if alertParent();
+
+      // Parent may acknowledge; reminderCount/lastRemindedAt are function-
+      // managed (escalationCheck) and not client-writable.
+      allow update: if alertParent() &&
+        affectedKeys().hasOnly(
+          ['acknowledged', 'acknowledgedAt', 'acknowledgedBy']
+        ) &&
+        request.resource.data.acknowledgedBy == request.auth.uid;
+
+      // Created by onSosCreated (Admin SDK) only.
+      allow create, delete: if false;
+    }
+
+    /* ═══════════════ top-level auditLogs (platform mirror) ═════════ */
+
+    match /auditLogs/{logId} {
+      // Platform security log: written by functions (and read via
+      // console/BigQuery export). Zero client surface — prevents both
+      // tampering and privacy leaks through enumeration.
+      allow read, write: if false;
+    }
+
+    /* ═══════════════ adminAudit (v1.2.0 — Developer Admin) ═══════════ */
+
+    // Platform-level admin action trail (ban/unban, admin logins). Written
+    // ONLY by functions/admin (Admin SDK bypasses rules); admins read it in
+    // the Developer Admin Console. No client — admin or not — can write it,
+    // and nobody at all can update/delete (tamper-proof, append-only).
+    match /adminAudit/{logId} {
+      allow read: if isAdmin();
+      allow create, update, delete: if false;
+    }
+
+    // Explicit deny-all: any path not matched above is unreachable.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    /* ════════════════════════════════════════════════════════════════
+       TEST MATRIX (spec §38 — see docs/testing.md + firestore.rules.test)
+       Legend: PA = Parent A (paired), PB = Parent B (not paired),
+               DEV = paired child device identity (custom claims),
+               ANON = unauthenticated client.
+       ┌────┬───────────────────────────────────────────────────┬────────┐
+       │ T1 │ PA get devices/A                                    │ ALLOW  │
+       │ T2 │ PB get devices/A                                    │ DENY   │
+       │ T3 │ PB list devices where ownerParentUid == PB          │ ALLOW  │
+       │ T4 │ PA list devices (unfiltered)                        │ DENY   │
+       │ T5 │ DEV update devices/A.status/lastSeenAt              │ ALLOW  │
+       │ T6 │ DEV update devices/A.ownerParentUid / childUid      │ DENY   │
+       │ T7 │ PA update devices/A (any field)                     │ DENY   │
+       │ T8 │ ANON create devices/A/commands/x                    │ DENY   │
+       │ T9 │ PA  create devices/A/commands/x (client direct)     │ DENY   │
+       │ T10│ DEV update commands/c.status → DELIVERED            │ ALLOW  │
+       │ T11│ DEV update commands/c.result (or createdBy)         │ DENY   │
+       │ T12│ DEV create commandResults (own command)             │ ALLOW  │
+       │ T13│ PA  create commandResults                           │ DENY   │
+       │ T14│ DEV create locations (own, valid shape)             │ ALLOW  │
+       │ T15│ DEV create devices/B/locations                      │ DENY   │
+       │ T16│ PA  create locations (fabricated telemetry)         │ DENY   │
+       │ T17│ DEV update/delete own locations (rewrite history)   │ DENY   │
+       │ T18│ PB  read devices/A/locations                        │ DENY   │
+       │ T19│ ANON read pairingCodes/*                            │ DENY   │
+       │ T20│ PA  write pairingCodes/*                            │ DENY   │
+       │ T21│ PA / DEV write sessions/*                           │ DENY   │
+       │ T22│ DEV create emergencyEvents (SOS, own device)        │ ALLOW  │
+       │ T23│ PA  update emergencyEvent.acknowledged              │ ALLOW  │
+       │ T24│ DEV update emergencyEvent                           │ DENY   │
+       │ T25│ DEV create auditLogs (createdAt == request.time)    │ ALLOW  │
+       │ T26│ DEV update/delete auditLogs                         │ DENY   │
+       │ T27│ PA  read devices/A/auditLogs (v1.4.1: admin-only)   │ DENY   │
+       │ T27a│ ADMIN (claim) read devices/A/auditLogs             │ ALLOW  │
+       │ T28│ Replay: DEV create 2nd commandResult for done cmd   │ ALLOW*
+       │    │   * rules pass (device-only surface), trigger       │        │
+       │    │   onCommandResult blocks terminal-state updates &   │        │
+       │    │   audits COMMAND_REPLAY_BLOCKED — see functions.    │        │
+       │ T29│ PA update users/PA (whitelisted fields)             │ ALLOW  │
+       │ T30│ PA update users/PA.role / accountLocked             │ DENY   │
+       │ T31│ PB read users/PA                                    │ DENY   │
+       │ T32│ PA delete users/PA                                  │ DENY   │
+       │ T33│ PA read children (own) / write children             │ ALLOW / DENY │
+       │ T34│ PA update emergencyAlerts.acknowledged (own alert)  │ ALLOW  │
+       │ T35│ PB update emergencyAlerts (not linked)              │ DENY   │
+       │ T36│ DEV create sessions/x/signals/y (from=child, ok)    │ ALLOW  │
+       │ T37│ DEV create sessions/x/signals/y (from=parent)       │ DENY   │
+       │    │    (spoofed identity)                                        │
+       │ T38│ DEV write sessions/x doc (state machine doc)        │ DENY   │
+       │ T39│ ADMIN (claim) list users / devices                  │ ALLOW  │
+       │ T40│ non-admin client read adminAudit                    │ DENY   │
+       │ T41│ any client write adminAudit (rules layer)           │ DENY   │
+       │ T42│ DEV update devices/A when devices/A.banned==true    │ DENY   │
+       │ T43│ DEV create backupItems/A/x (valid shape, PENDING)   │ ALLOW  │
+       │ T44│ DEV create backupItems with r2Key / UPLOADED        │ DENY   │
+       │ T45│ DEV update backupItems.state → UPLOADED (direct)    │ DENY   │
+       │ T46│ DEV update backupItems.state → FAILED               │ ALLOW  │
+       │ T47│ PA  write backupPolicy/current (direct)             │ DENY   │
+       │ T48│ DEV write backupConsent (valid shape)               │ ALLOW  │
+       │ T49│ PB  read children/C/backupIndex/A (not paired)      │ DENY   │
+       │ T50│ any client read/write children/C/backupKeys         │ DENY   │
+       └────┴───────────────────────────────────────────────────┴────────┘
+       ════════════════════════════════════════════════════════════════ */
+  }
+}

@@ -1,0 +1,25 @@
+rules_version = '2';
+
+/**
+ * storage.rules — Cloud Storage for the Family Safety Platform.
+ *
+ * DELIBERATELY DENY-ALL.
+ *
+ * Rationale: the platform intentionally routes ZERO binary media through
+ * Firebase. Camera / microphone / screen sessions are consent-based and use
+ * direct peer-to-peer (WebRTC, DTLS-encrypted) transport; telemetry is
+ * structured JSON in Firestore. There is no product need for object storage,
+ * and a closed bucket removes an entire class of privacy incidents (leaked
+ * recordings, public links, bucket enumeration).
+ *
+ * If a future feature genuinely needs Storage (e.g. static policy assets),
+ * add a dedicated, path-scoped, consent-reviewed match block below — never a
+ * broad read/write grant.
+ */
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

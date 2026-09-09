@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Compose-only app; the XML theme is just the window chrome (no action bar,
+  light background) that Compose draws on top of.
+-->
+<resources>
+    <style name="Theme.FamilySafety" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowBackground">#F6FBF4</item>
+    </style>
+</resources>

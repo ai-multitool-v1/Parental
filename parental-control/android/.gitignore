@@ -1,0 +1,14 @@
+# Build artifacts
+.gradle/
+build/
+local.properties
+*.apk
+*.aab
+
+# Firebase config contains project keys — keep the example, ignore the real file.
+app/google-services.json
+
+# IDE
+.idea/
+*.iml
+.DS_Store

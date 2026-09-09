@@ -1,0 +1,102 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug / logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+*.log
+dev.log
+dev.out.log
+server.log
+
+# env files — NEVER commit real credentials
+.env
+.env.*
+!.env.example
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+local-*
+.claude
+.z-ai-config
+
+# ============================================================
+# CRITICAL: server-only secret stores (password hashes, session
+# secrets, admin registry). Never commit these.
+# ============================================================
+/.server/
+**/.server/
+
+# ============================================================
+# Firebase / Android credentials — NEVER commit real values
+# ============================================================
+parental-control/android/app/google-services.json
+**/google-services.json
+!**/google-services.json.example
+**/serviceAccountKey.json
+**/firebase-adminsdk*.json
+*.jks
+*.keystore
+keystore.properties
+
+# ============================================================
+# Sandbox artifacts (not part of the product)
+# ============================================================
+/skills/
+/examples/
+/mini-services/
+/tool-results/
+/download/
+/upload/
+/db/
+/prisma/
+/tests/
+/.zscripts/
+Caddyfile
+worklog.md
+agent-ctx/
+
+# ============================================================
+# Firebase Functions build output
+# ============================================================
+parental-control/functions/lib/
+
+# ============================================================
+# Android build output
+# ============================================================
+parental-control/android/.gradle/
+parental-control/android/build/
+parental-control/android/app/build/
+parental-control/android/**/build/
+parental-control/android/local.properties
+parental-control/android/.idea/
+*.apk.idsig

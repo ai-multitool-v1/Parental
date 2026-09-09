@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Configuration for the AppGuard accessibility service.
+
+  PURPOSE (disclosed in-app and to the parent dashboard):
+  Real-time enforcement of the family policy — block-listed apps and
+  non-allowed apps during the bedtime window are intercepted the moment they
+  come to the foreground and a full-screen Blocker screen is shown.
+
+  LIMITS: only TYPE_WINDOW_STATE_CHANGED events are observed. No text is
+  collected, no key events are observed, no content is logged. The service
+  cannot be enabled silently — the user must toggle it in
+  Settings → Accessibility.
+-->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityEventTypes="typeWindowStateChanged"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagDefault"
+    android:canRetrieveWindowContent="false"
+    android:description="@string/accessibility_service_desc"
+    android:notificationTimeout="100"
+    android:settingsActivity="org.setbd.parentcontrol.MainActivity" />

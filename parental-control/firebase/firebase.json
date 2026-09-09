@@ -1,0 +1,34 @@
+{
+  "//": [
+    "Firebase project configuration for the Parental Control & Family Safety Platform.",
+    "This file lives in parental-control/firebase/ — run all CLI commands from this",
+    "directory so relative paths resolve correctly:",
+    "    cd parental-control/firebase",
+    "    firebase deploy --only firestore:rules,firestore:indexes,functions,storage",
+    "    firebase emulators:start"
+  ],
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
+  "storage": {
+    "rules": "storage.rules"
+  },
+  "functions": [
+    {
+      "source": "../functions",
+      "codebase": "default",
+      "runtime": "nodejs20",
+      "ignore": ["node_modules", ".git", "lib", "*.log"],
+      "predeploy": ["npm --prefix \"$RESOURCE_DIR\" run build"]
+    }
+  ],
+  "emulators": {
+    "auth": { "port": 9099 },
+    "firestore": { "port": 8080 },
+    "functions": { "port": 5001 },
+    "pubsub": { "port": 8085 },
+    "ui": { "enabled": true, "port": 4000 },
+    "singleProjectMode": true
+  }
+}

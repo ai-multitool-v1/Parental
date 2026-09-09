@@ -1,0 +1,8 @@
+# Compiled Cloud Functions output
+lib/
+node_modules/
+*.log
+.env
+# Service account keys must NEVER be committed
+*-firebase-adminsdk-*.json
+serviceAccountKey.json

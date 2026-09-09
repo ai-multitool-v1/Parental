@@ -1,0 +1,27 @@
+{
+  "//": [
+    "Firestore security-rules unit tests (spec §38 matrix).",
+    "Setup: cd parental-control/firebase && npm install",
+    "Run:   npm test   (starts the Firestore emulator via firebase emulators:exec)"
+  ],
+  "name": "parental-control-firestore-rules-tests",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "test": "firebase emulators:exec --only firestore \"jest --runInBand\""
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^3.0.3",
+    "@types/jest": "^29.5.12",
+    "firebase": "^10.11.1",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.2",
+    "typescript": "^5.4.5"
+  },
+  "jest": {
+    "preset": "ts-jest",
+    "testEnvironment": "node",
+    "testMatch": ["**/*.test.ts"],
+    "verbose": true
+  }
+}

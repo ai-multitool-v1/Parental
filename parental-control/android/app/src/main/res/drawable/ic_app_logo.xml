@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- App launcher icon: green shield with a home (vector drawable). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#1B5E20"
+        android:pathData="M12,1L3,5v6c0,5.55 3.84,10.74 9,12c5.16,-1.26 9,-6.45 9,-12V5L12,1z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M12,6.5l-4.5,3.6V15h3.2v-2.8h2.6V15h3.2v-4.9L12,6.5z" />
+</vector>

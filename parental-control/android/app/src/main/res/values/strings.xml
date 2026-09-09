@@ -1,0 +1,182 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Family Safety (Child)</string>
+
+    <!-- ======================= General / onboarding ======================= -->
+    <string name="onboarding_title">Family Safety for Children</string>
+    <string name="onboarding_subtitle">This app helps your family stay safe together. Everything it does is visible to you, and you can always say no.</string>
+    <string name="onboarding_transparency_point_1">• Location sharing only happens if you allow it.</string>
+    <string name="onboarding_transparency_point_2">• Screen, camera or microphone sharing always asks you first — with a big Allow / No button.</string>
+    <string name="onboarding_transparency_point_3">• While sharing, you will always see a colored banner and a notification.</string>
+    <string name="onboarding_transparency_point_4">• You can always press the red SOS button to ask for help.</string>
+    <string name="onboarding_get_started">Get started</string>
+
+    <!-- ============================= Pairing ============================== -->
+    <string name="pairing_title">Connect to your parent</string>
+    <string name="pairing_instructions">Ask your parent to open the Family Safety dashboard and enter this code. The code works for 5 minutes and can be used only once.</string>
+    <string name="pairing_waiting">Waiting for your parent to approve…</string>
+    <string name="pairing_approved">Connected! Setting things up…</string>
+    <string name="pairing_cancel">Cancel code</string>
+    <string name="pairing_new_code">Make a new code</string>
+    <string name="pairing_expired">The code expired. Please make a new one.</string>
+    <string name="pairing_failed">Pairing failed. Please try again.</string>
+
+    <!-- ========================= Main dashboard =========================== -->
+    <string name="dashboard_title">My device</string>
+    <string name="battery_label">Battery</string>
+    <string name="network_label">Internet</string>
+    <string name="network_wifi">Wi-Fi</string>
+    <string name="network_mobile">Mobile data</string>
+    <string name="network_offline">Offline</string>
+    <string name="charging_label">Charging</string>
+    <string name="bedtime_active_banner">Bedtime schedule is on right now. Some apps are paused.</string>
+    <string name="service_status_ok">Protected &amp; connected</string>
+    <string name="service_status_offline">Offline — will sync when internet returns</string>
+
+    <!-- ============================== SOS ================================= -->
+    <string name="sos_button">SOS — I need help</string>
+    <string name="sos_confirm_title">Send SOS to your parent?</string>
+    <string name="sos_confirm_body">Your parent will get an alert with your battery, internet and location (if allowed). Sending in…</string>
+    <string name="sos_sent">SOS sent. Your parent has been alerted.</string>
+    <string name="sos_rate_limited">An SOS was just sent. Please wait a few minutes.</string>
+    <string name="sos_cancel">No, go back</string>
+
+    <!-- ============================== Consent ============================= -->
+    <string name="consent_title_screen">Screen share request</string>
+    <string name="consent_title_camera">Camera request</string>
+    <string name="consent_title_audio">Microphone request</string>
+    <string name="consent_body_screen">%1$s wants to see your screen. They will see everything you show. Nothing is shared until you press Allow.</string>
+    <string name="consent_body_camera">%1$s wants to turn on your camera. Nothing is shared until you press Allow.</string>
+    <string name="consent_body_audio">%1$s wants to listen through your microphone. Nothing is shared until you press Allow.</string>
+    <string name="consent_allow">Allow</string>
+    <string name="consent_decline">No, thanks</string>
+    <string name="consent_stoppable_note">You can stop any time from the banner. Your parent will be told when you stop.</string>
+
+    <!-- =========================== Session banner ========================= -->
+    <string name="banner_screen_active">Screen sharing is ON — your parent can see your screen</string>
+    <string name="banner_camera_active">Camera is ON — your parent can see you</string>
+    <string name="banner_audio_active">Microphone is ON — your parent can hear you</string>
+    <string name="banner_location_active">Location sharing is ON — your parent can see where you are</string>
+    <string name="banner_stop">Stop</string>
+
+    <!-- ========================= Safety check ============================= -->
+    <string name="safety_check_title">Are you OK?</string>
+    <string name="safety_check_body">Your parent is checking in on you.</string>
+    <string name="safety_check_im_ok">I\'m OK</string>
+    <string name="safety_check_need_help">I need help</string>
+
+    <!-- ============================ Settings ============================== -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_permissions_title">Permissions</string>
+    <string name="settings_notifications">Notifications</string>
+    <string name="settings_location">Location</string>
+    <string name="settings_background_location">Background location</string>
+    <string name="settings_usage_access">App usage access</string>
+    <string name="settings_camera">Camera</string>
+    <string name="settings_microphone">Microphone</string>
+    <string name="settings_battery_title">Battery &amp; reliability</string>
+    <string name="settings_battery_action">Allow background runs (ignore battery optimization)</string>
+    <string name="settings_battery_manufacturer_note">Additional battery settings may be required on %1$s devices. Open your phone\'s battery settings and allow this app to run in the background, otherwise heartbeat and bedtime schedules can be delayed.</string>
+    <string name="settings_unpair_title">Unpair from parent</string>
+    <string name="settings_unpair_body">Unpairing stops the connection to your parent\'s dashboard. Your parent will be notified. You can pair again later with a new code.</string>
+    <string name="settings_unpair_confirm">Unpair</string>
+    <string name="settings_granted">Allowed</string>
+    <string name="settings_denied">Not allowed</string>
+
+    <!-- ========================== Notifications =========================== -->
+    <string name="channel_parent_messages">Messages from parent</string>
+    <string name="channel_parent_messages_desc">Notes and check-ins from your parent</string>
+    <string name="channel_sessions">Active sharing sessions</string>
+    <string name="channel_sessions_desc">Visible indicator while screen, camera or microphone is shared</string>
+    <string name="channel_location">Location sharing</string>
+    <string name="channel_location_desc">Visible indicator while live location is shared</string>
+    <string name="channel_sos">SOS / safety alerts</string>
+    <string name="channel_sos_desc">Your own SOS confirmations and safety checks</string>
+    <string name="notif_parent_message_title">Message from your parent</string>
+    <string name="notif_screen_active_title">Screen sharing active</string>
+    <string name="notif_screen_active_text">Your parent can see your screen. Tap to stop.</string>
+    <string name="notif_camera_active_title">Camera session active</string>
+    <string name="notif_camera_active_text">Your camera is being shared. Tap to stop.</string>
+    <string name="notif_audio_active_title">Microphone session active</string>
+    <string name="notif_audio_active_text">Your microphone is being shared. Tap to stop.</string>
+    <string name="notif_location_active_title">Location sharing active</string>
+    <string name="notif_location_active_text">Your live location is being shared with your parent. Tap to open.</string>
+    <string name="notif_safety_check_title">Family check-in</string>
+    <string name="notif_safety_check_text">Your parent is asking if you are OK. Tap to answer.</string>
+    <string name="notif_sos_sent_title">SOS sent</string>
+    <string name="notif_sos_sent_text">Your parent has been alerted.</string>
+    <string name="notif_bedtime_title">Bedtime started</string>
+    <string name="notif_bedtime_text">It\'s bedtime. Some apps are paused until morning.</string>
+
+    <!-- ====================== Device admin strings ========================= -->
+    <string name="device_admin_label">Family Safety device admin</string>
+    <string name="device_admin_description">Allows the Family Safety app to lock the screen when a remote lock is requested by an enrolled parent, and to record lock/unlock events for the family audit log. This administrator can be removed at any time from Settings.</string>
+
+    <!-- =================== Protection & management setup ==================== -->
+    <string name="settings_protection_title">Protection &amp; management</string>
+    <string name="settings_device_admin">Device admin (uninstall &amp; lock protection)</string>
+    <string name="settings_accessibility">App protection (accessibility)</string>
+    <string name="settings_management_mode">Management mode</string>
+    <string name="settings_activate_admin">Activate device admin</string>
+    <string name="settings_enable_accessibility">Enable app protection</string>
+    <string name="settings_admin_explanation">Device admin lets the parent remotely lock the screen (LOCK_DEVICE) and prevents accidental uninstall of the protection app. You can deactivate it any time from Settings.</string>
+    <string name="settings_hide_icon">Hide app icon (Device Owner)</string>
+    <string name="settings_hide_icon_note">Official Android Enterprise feature. While hidden, the app pauses (no location/commands) until reopened by dialing *#*#1111#*#*.</string>
+    <string name="settings_hide_icon_confirm_body">The app icon will disappear from the launcher and the app will pause until it is reopened by dialing *#*#1111#*#* on this device. To show the icon again, also turn the toggle off in the parent dashboard and dial the code. Continue?</string>
+    <string name="settings_dial_code_title">Open by dial code</string>
+    <string name="settings_dial_code_note">Dial this code in the phone app to open Family Safety at any time — including when the icon is hidden.</string>
+
+    <!-- ===================== App Guard accessibility ======================== -->
+    <string name="accessibility_service_label">Family Safety — App protection</string>
+    <string name="accessibility_service_desc">Blocks apps that the family policy does not allow and enforces the bedtime schedule by detecting which app is in the foreground. It never reads screen content, text or keystrokes, and shows a permanent notification while active.</string>
+    <string name="guard_notif_title">App protection active</string>
+    <string name="guard_notif_text">Blocked apps and the bedtime schedule are being enforced.</string>
+
+    <!-- ======================== Blocker screen ============================== -->
+    <string name="blocker_app_title">This app is blocked</string>
+    <string name="blocker_app_body">Your parent has paused this app. It will be available again when the policy changes.</string>
+    <string name="blocker_bedtime_title">It\'s bedtime 🌙</string>
+    <string name="blocker_bedtime_body">This app is paused until the bedtime schedule ends. Sleep well!</string>
+    <string name="blocker_protected_title">This setting is protected</string>
+    <string name="blocker_protected_body">Device protection settings are managed by your parent while protection mode is on.</string>
+    <string name="blocker_go_home">Go to home screen</string>
+
+    <!-- ============================ Misc =================================== -->
+    <string name="unsupported_feature">This feature isn\'t supported on this device or Android version.</string>
+    <string name="permission_needed">Permission needed</string>
+    <string name="permission_needed_body">To do this, the app needs the %1$s permission. You can allow it in Settings.</string>
+    <string name="open_settings">Open settings</string>
+
+    <!-- ======================= Splash / branding v1.2.0 ===================== -->
+    <string name="splash_app_title">Family Safety</string>
+    <string name="splash_app_subtitle">Consent-based Parental Control Platform</string>
+    <string name="credit_develop_by">Develop By Silent Exploit Team Bd</string>
+    <string name="credit_powered_by">Powered By AI MultiTool</string>
+    <string name="credit_full_line">Develop By Silent Exploit Team Bd · Powered By AI MultiTool</string>
+
+    <!-- ======================= Telegram support modal ======================= -->
+    <string name="support_title">Support &amp; contact</string>
+    <string name="support_body">Have a problem, a question, or want to appeal a moderation decision? Message us on Telegram — the official support channel. We usually reply within a day.</string>
+    <string name="support_open_telegram">Open Telegram</string>
+    <string name="support_telegram_handle">t.me/setbd_ceo</string>
+    <string name="support_close">Close</string>
+
+    <!-- ==================== Backup (v1.3.0) — consent-based ================= -->
+    <string name="backup_title">Cloud backup</string>
+    <string name="backup_subtitle">Photos, videos, contacts and (optional) SMS are backed up encrypted. Your parent can turn categories on/off from their dashboard, but nothing is backed up unless you also allow it here.</string>
+    <string name="backup_category_photos">Photos</string>
+    <string name="backup_category_videos">Videos</string>
+    <string name="backup_category_contacts">Contacts</string>
+    <string name="backup_category_sms">SMS (optional)</string>
+    <string name="backup_enable_dialog_title">Allow %1$s backup?</string>
+    <string name="backup_enable_dialog_body">New %1$s will be encrypted (AES-256-GCM) on this device and uploaded to your family\'s private cloud storage. You can turn this off at any time; turning it off stops new uploads immediately.</string>
+    <string name="backup_disable_toast">%1$s backup stopped — queued uploads will be cancelled before upload.</string>
+    <string name="backup_enable_toast">%1$s backup enabled — eligible pending items will resume.</string>
+    <string name="backup_permission_grant">Grant permission</string>
+    <string name="backup_state_on">ON</string>
+    <string name="backup_state_off">OFF</string>
+    <string name="backup_sms_unavailable">SMS backup is unavailable on this device/Play policy — shown honestly, never bypassed.</string>
+    <string name="backup_reconcile_now">Check for new content now</string>
+    <string name="backup_reconcile_started">Backup check started — uploads run in the background.</string>
+    <string name="backup_encryption_note">All backup content is encrypted on this device before upload. The key never leaves your family account.</string>
+</resources>

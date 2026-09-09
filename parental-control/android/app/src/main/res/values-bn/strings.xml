@@ -1,0 +1,172 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- বাংলা (Bengali) translations for the child app UI. -->
+<resources>
+    <string name="app_name">ফ্যামিলি সেফটি (শিশু)</string>
+
+    <string name="onboarding_title">শিশুদের জন্য ফ্যামিলি সেফটি</string>
+    <string name="onboarding_subtitle">এই অ্যাপ পরিবারের সবাইকে একসাথে নিরাপদ রাখতে সাহায্য করে। এটি যা কিছু করে তা আপনি দেখতে পাবেন এবং আপনি সবসময় না-ও বলতে পারেন।</string>
+    <string name="onboarding_transparency_point_1">• আপনি অনুমতি দিলে তবেই লোকেশন শেয়ার হয়।</string>
+    <string name="onboarding_transparency_point_2">• স্ক্রিন, ক্যামেরা বা মাইক্রোফোন শেয়ারের আগে সবসময় বড় করে Allow / No বোতামে জিজ্ঞেস করা হয়।</string>
+    <string name="onboarding_transparency_point_3">• শেয়ার চলাকালীন সবসময় একটি রঙিন ব্যানার ও নোটিফিকেশন দেখা যাবে।</string>
+    <string name="onboarding_transparency_point_4">• সাহায্যের জন্য সবসময় লাল SOS বোতাম চাপতে পারেন।</string>
+    <string name="onboarding_get_started">শুরু করুন</string>
+
+    <string name="pairing_title">অভিভাবকের সাথে সংযোগ করুন</string>
+    <string name="pairing_instructions">অভিভাবককে ফ্যামিলি সেফটি ড্যাশবোর্ড খুলে এই কোডটি দিতে বলুন। কোডটি ৫ মিনিট কাজ করবে এবং শুধু একবার ব্যবহার করা যাবে।</string>
+    <string name="pairing_waiting">অভিভাবকের অনুমোদনের অপেক্ষায়…</string>
+    <string name="pairing_approved">সংযুক্ত! প্রস্তুত হচ্ছে…</string>
+    <string name="pairing_cancel">কোড বাতিল করুন</string>
+    <string name="pairing_new_code">নতুন কোড তৈরি করুন</string>
+    <string name="pairing_expired">কোডের মেয়াদ শেষ। নতুন কোড তৈরি করুন।</string>
+    <string name="pairing_failed">পেয়ারিং ব্যর্থ হয়েছে। আবার চেষ্টা করুন।</string>
+
+    <string name="dashboard_title">আমার ডিভাইস</string>
+    <string name="battery_label">ব্যাটারি</string>
+    <string name="network_label">ইন্টারনেট</string>
+    <string name="network_wifi">ওয়াই-ফাই</string>
+    <string name="network_mobile">মোবাইল ডেটা</string>
+    <string name="network_offline">অফলাইন</string>
+    <string name="charging_label">চার্জ হচ্ছে</string>
+    <string name="bedtime_active_banner">এখন ঘুমের সময় চলছে। কিছু অ্যাপ বন্ধ আছে।</string>
+    <string name="service_status_ok">সুরক্ষিত ও সংযুক্ত</string>
+    <string name="service_status_offline">অফলাইন — ইন্টারনেট এলে আবার সিঙ্ক হবে</string>
+
+    <string name="sos_button">SOS — আমার সাহায্য দরকার</string>
+    <string name="sos_confirm_title">অভিভাবককে SOS পাঠাবেন?</string>
+    <string name="sos_confirm_body">আপনার অভিভাবক ব্যাটারি, ইন্টারনেট ও লোকেশন (অনুমতি থাকলে) সহ সতর্কবার্তা পাবেন। পাঠানো হচ্ছে…</string>
+    <string name="sos_sent">SOS পাঠানো হয়েছে। আপনার অভিভাবককে জানানো হয়েছে।</string>
+    <string name="sos_rate_limited">এইমাত্র SOS পাঠানো হয়েছে। কয়েক মিনিট অপেক্ষা করুন।</string>
+    <string name="sos_cancel">না, ফিরে যান</string>
+
+    <string name="consent_title_screen">স্ক্রিন শেয়ারের অনুরোধ</string>
+    <string name="consent_title_camera">ক্যামেরার অনুরোধ</string>
+    <string name="consent_title_audio">মাইক্রোফোনের অনুরোধ</string>
+    <string name="consent_body_screen">%1$s আপনার স্ক্রিন দেখতে চান। Allow না চাপা পর্যন্ত কিছুই শেয়ার হবে না।</string>
+    <string name="consent_body_camera">%1$s আপনার ক্যামেরা চালু করতে চান। Allow না চাপা পর্যন্ত কিছুই শেয়ার হবে না।</string>
+    <string name="consent_body_audio">%1$s আপনার মাইক্রোফোনে শুনতে চান। Allow না চাপা পর্যন্ত কিছুই শেয়ার হবে না।</string>
+    <string name="consent_allow">অনুমতি দিন</string>
+    <string name="consent_decline">না, ধন্যবাদ</string>
+    <string name="consent_stoppable_note">ব্যানার থেকে যেকোনো সময় বন্ধ করতে পারবেন। বন্ধ করলে অভিভাবক জানতে পারবেন।</string>
+
+    <string name="banner_screen_active">স্ক্রিন শেয়ার চালু আছে — অভিভাবক আপনার স্ক্রিন দেখতে পাচ্ছেন</string>
+    <string name="banner_camera_active">ক্যামেরা চালু আছে — অভিভাবক আপনাকে দেখতে পাচ্ছেন</string>
+    <string name="banner_audio_active">মাইক্রোফোন চালু আছে — অভিভাবক আপনাকে শুনতে পাচ্ছেন</string>
+    <string name="banner_location_active">লোকেশন শেয়ার চালু আছে — অভিভাবক আপনার অবস্থান দেখতে পাচ্ছেন</string>
+    <string name="banner_stop">বন্ধ করুন</string>
+
+    <string name="safety_check_title">আপনি কি ঠিক আছেন?</string>
+    <string name="safety_check_body">আপনার অভিভাবক খোঁজ নিচ্ছেন।</string>
+    <string name="safety_check_im_ok">আমি ঠিক আছি</string>
+    <string name="safety_check_need_help">সাহায্য দরকার</string>
+
+    <string name="settings_title">সেটিংস</string>
+    <string name="settings_permissions_title">অনুমতিসমূহ</string>
+    <string name="settings_notifications">নোটিফিকেশন</string>
+    <string name="settings_location">লোকেশন</string>
+    <string name="settings_background_location">ব্যাকগ্রাউন্ড লোকেশন</string>
+    <string name="settings_usage_access">অ্যাপ ব্যবহারের তথ্য</string>
+    <string name="settings_camera">ক্যামেরা</string>
+    <string name="settings_microphone">মাইক্রোফোন</string>
+    <string name="settings_battery_title">ব্যাটারি ও নির্ভরযোগ্যতা</string>
+    <string name="settings_battery_action">ব্যাকগ্রাউন্ডে চলার অনুমতি দিন (ব্যাটারি অপ্টিমাইজেশন উপেক্ষা)</string>
+    <string name="settings_battery_manufacturer_note">%1$s ডিভাইসে অতিরিক্ত ব্যাটারি সেটিংস দরকার হতে পারে। ফোনের ব্যাটারি সেটিংসে গিয়ে এই অ্যাপকে ব্যাকগ্রাউন্ডে চলার অনুমতি দিন, নাহলে হার্টবিট ও ঘুমের সময়সূচি দেরিতে কাজ করতে পারে।</string>
+    <string name="settings_unpair_title">অভিভাবক থেকে আনপেয়ার</string>
+    <string name="settings_unpair_body">আনপেয়ার করলে অভিভাবকের ড্যাশবোর্ডের সংযোগ বন্ধ হবে। অভিভাবককে জানানো হবে। পরে নতুন কোড দিয়ে আবার পেয়ার করা যাবে।</string>
+    <string name="settings_unpair_confirm">আনপেয়ার করুন</string>
+    <string name="settings_granted">অনুমোদিত</string>
+    <string name="settings_denied">অনুমোদিত নয়</string>
+
+    <string name="channel_parent_messages">অভিভাবকের বার্তা</string>
+    <string name="channel_parent_messages_desc">অভিভাবকের চিঠি ও খোঁজখবর</string>
+    <string name="channel_sessions">চলমান শেয়ারিং সেশন</string>
+    <string name="channel_sessions_desc">স্ক্রিন, ক্যামেরা বা মাইক্রোফোন শেয়ার চলাকালীন দৃশ্যমান নির্দেশক</string>
+    <string name="channel_location">লোকেশন শেয়ারিং</string>
+    <string name="channel_location_desc">লাইভ লোকেশন শেয়ার চলাকালীন দৃশ্যমান নির্দেশক</string>
+    <string name="channel_sos">SOS / নিরাপত্তা সতর্কতা</string>
+    <string name="channel_sos_desc">আপনার SOS নিশ্চিতকরণ ও সেফটি চেক</string>
+    <string name="notif_parent_message_title">অভিভাবকের বার্তা</string>
+    <string name="notif_screen_active_title">স্ক্রিন শেয়ার চালু</string>
+    <string name="notif_screen_active_text">অভিভাবক আপনার স্ক্রিন দেখছেন। বন্ধ করতে ট্যাপ করুন।</string>
+    <string name="notif_camera_active_title">ক্যামেরা সেশন চালু</string>
+    <string name="notif_camera_active_text">আপনার ক্যামেরা শেয়ার হচ্ছে। বন্ধ করতে ট্যাপ করুন।</string>
+    <string name="notif_audio_active_title">মাইক্রোফোন সেশন চালু</string>
+    <string name="notif_audio_active_text">আপনার মাইক্রোফোন শেয়ার হচ্ছে। বন্ধ করতে ট্যাপ করুন।</string>
+    <string name="notif_location_active_title">লোকেশন শেয়ার চালু</string>
+    <string name="notif_location_active_text">আপনার লাইভ লোকেশন অভিভাবকের সাথে শেয়ার হচ্ছে। খুলতে ট্যাপ করুন।</string>
+    <string name="notif_safety_check_title">পরিবারিক খোঁজখবর</string>
+    <string name="notif_safety_check_text">অভিভাবক জানতে চাইছেন আপনি ঠিক আছেন কিনা। উত্তর দিতে ট্যাপ করুন।</string>
+    <string name="notif_sos_sent_title">SOS পাঠানো হয়েছে</string>
+    <string name="notif_sos_sent_text">আপনার অভিভাবককে জানানো হয়েছে।</string>
+    <string name="notif_bedtime_title">ঘুমের সময় শুরু</string>
+    <string name="notif_bedtime_text">ঘুমের সময় হয়েছে। সকাল পর্যন্ত কিছু অ্যাপ বন্ধ থাকবে।</string>
+
+    <string name="device_admin_label">ফ্যামিলি সেফটি ডিভাইস অ্যাডমিন</string>
+
+    <!-- =================== Protection &amp; management setup ==================== -->
+    <string name="settings_protection_title">সুরক্ষা ও ম্যানেজমেন্ট</string>
+    <string name="settings_device_admin">ডিভাইস অ্যাডমিন (আনইনস্টল ও লক সুরক্ষা)</string>
+    <string name="settings_accessibility">অ্যাপ সুরক্ষা (অ্যাকসেসিবিলিটি)</string>
+    <string name="settings_management_mode">ম্যানেজমেন্ট মোড</string>
+    <string name="settings_activate_admin">ডিভাইস অ্যাডমিন চালু করুন</string>
+    <string name="settings_enable_accessibility">অ্যাপ সুরক্ষা চালু করুন</string>
+    <string name="settings_admin_explanation">ডিভাইস অ্যাডমিন দিয়ে অভিভাবক দূর থেকে স্ক্রিন লক করতে পারেন (LOCK_DEVICE) এবং সুরক্ষা অ্যাপটি ভুলে আনইনস্টল হওয়া থেকে বাধা পায়। Settings থেকে যেকোনো সময় বন্ধ করা যাবে।</string>
+    <string name="settings_hide_icon">অ্যাপ আইকন লুকান (ডিভাইস ওনার)</string>
+    <string name="settings_hide_icon_note">অফিসিয়াল Android Enterprise ফিচার। লুকানো অবস্থায় অ্যাপ থেমে থাকে (লোকেশন/কমান্ড বন্ধ) — *#*#1111#*#* ডায়াল করলে আবার খুলবে।</string>
+    <string name="settings_hide_icon_confirm_body">লঞ্চার থেকে অ্যাপ আইকন চলে যাবে এবং অ্যাপ থেমে যাবে — এই ফোনে *#*#1111#*#* ডায়াল করলে আবার খুলবে। আইকন আবার দেখাতে অভিভাবক ড্যাশবোর্ড থেকে টগলটি বন্ধ করে কোডটি ডায়াল করুন। চালিয়ে যাবেন?</string>
+    <string name="settings_dial_code_title">ডায়াল কোড দিয়ে খুলুন</string>
+    <string name="settings_dial_code_note">ফোন অ্যাপে এই কোডটি ডায়াল করলে যেকোনো সময় ফ্যামিলি সেফটি খুলবে — আইকন লুকানো থাকলেও।</string>
+
+    <!-- ===================== App Guard accessibility ======================== -->
+    <string name="accessibility_service_label">ফ্যামিলি সেফটি — অ্যাপ সুরক্ষা</string>
+    <string name="accessibility_service_desc">পরিবারের পলিসিতে নিষিদ্ধ অ্যাপগুলো ব্লক করে এবং ঘুমের সময়সূচি মেনে চলে — কোন অ্যাপ সামনে আছে তা শনাক্ত করে। এটি কখনোই স্ক্রিনের লেখা, টেক্সট বা কী-প্রেস পড়ে না এবং চালু থাকা অবস্থায় একটি স্থায়ী নোটিফিকেশন দেখায়।</string>
+    <string name="guard_notif_title">অ্যাপ সুরক্ষা চালু আছে</string>
+    <string name="guard_notif_text">ব্লক করা অ্যাপ ও ঘুমের সময়সূচি এখন কাজ করছে।</string>
+
+    <!-- ======================== Blocker screen ============================== -->
+    <string name="blocker_app_title">এই অ্যাপটি ব্লক করা আছে</string>
+    <string name="blocker_app_body">আপনার অভিভাবক এই অ্যাপটি সাময়িক বন্ধ রেখেছেন। পলিসি বদলালে আবার চালু হবে।</string>
+    <string name="blocker_bedtime_title">ঘুমের সময় 🌙</string>
+    <string name="blocker_bedtime_body">ঘুমের সময়সূচি শেষ হওয়া পর্যন্ত এই অ্যাপটি বন্ধ থাকবে। ভালো ঘুম!</string>
+    <string name="blocker_protected_title">এই সেটিং সুরক্ষিত</string>
+    <string name="blocker_protected_body">সুরক্ষা মোড চালু থাকাকালীন ডিভাইস সুরক্ষা সেটিংস অভিভাবক নিয়ন্ত্রণ করেন।</string>
+    <string name="blocker_go_home">হোম স্ক্রিনে যান</string>
+    <string name="device_admin_description">নিবন্ধিত অভিভাবকের রিমোট লক অনুরোধে স্ক্রিন লক করতে এবং পরিবারের অডিট লগের জন্য লক/আনলক ইভেন্ট রাখতে ফ্যামিলি সেফটি অ্যাপকে অনুমতি দেয়। এই অ্যাডমিনিস্ট্রেটর সেটিংস থেকে যেকোনো সময় সরানো যাবে।</string>
+
+    <string name="unsupported_feature">এই ডিভাইস বা অ্যান্ড্রয়েড ভার্সনে এই ফিচারটি সমর্থিত নয়।</string>
+    <string name="permission_needed">অনুমতি প্রয়োজন</string>
+    <string name="permission_needed_body">এটি করতে হলে %1$s অনুমতি দরকার। সেটিংস থেকে অনুমতি দিতে পারেন।</string>
+    <string name="open_settings">সেটিংস খুলুন</string>
+
+    <!-- ======================= Splash / branding v1.2.0 ===================== -->
+    <string name="splash_app_title">Family Safety</string>
+    <string name="splash_app_subtitle">Consent-based Parental Control Platform</string>
+    <string name="credit_develop_by">Develop By Silent Exploit Team Bd</string>
+    <string name="credit_powered_by">Powered By AI MultiTool</string>
+    <string name="credit_full_line">Develop By Silent Exploit Team Bd · Powered By AI MultiTool</string>
+
+    <!-- ======================= Telegram support modal ======================= -->
+    <string name="support_title">সাপোর্ট ও যোগাযোগ</string>
+    <string name="support_body">কোনো সমস্যা, প্রশ্ন বা আপিল করতে চাইলে আমাদের অফিসিয়াল Telegram চ্যানেলে মেসেজ করুন — সাধারণত এক দিনের মধ্যে উত্তর পাবেন।</string>
+    <string name="support_open_telegram">Telegram খুলুন</string>
+    <string name="support_telegram_handle">t.me/setbd_ceo</string>
+    <string name="support_close">বন্ধ করুন</string>
+
+    <!-- ==================== Backup (v1.3.0) — consent-based ================= -->
+    <string name="backup_title">ক্লাউড ব্যাকআপ</string>
+    <string name="backup_subtitle">ছবি, ভিডিও, কন্টাক্ট ও (ঐচ্ছিক) SMS এনক্রিপ্ট অবস্থায় ব্যাকআপ হয়। অভিভাবক ড্যাশবোর্ড থেকে ক্যাটাগরি অন/অফ করতে পারবেন, কিন্তু আপনি এখানে অনুমতি না দিলে কিছুই ব্যাকআপ হবে না।</string>
+    <string name="backup_category_photos">ছবি</string>
+    <string name="backup_category_videos">ভিডিও</string>
+    <string name="backup_category_contacts">কন্টাক্ট</string>
+    <string name="backup_category_sms">SMS (ঐচ্ছিক)</string>
+    <string name="backup_enable_dialog_title">%1$s ব্যাকআপের অনুমতি দেবেন?</string>
+    <string name="backup_enable_dialog_body">নতুন %1$s এই ডিভাইসে AES-256-GCM দিয়ে এনক্রিপ্ট হয়ে পরিবারের প্রাইভেট ক্লাউডে যাবে। যেকোনো সময় বন্ধ করতে পারবেন; বন্ধ করলে সাথে সাথে নতুন আপলোড থেমে যাবে।</string>
+    <string name="backup_disable_toast">%1$s ব্যাকআপ বন্ধ — সারির আইটেমগুলো আপলোডের আগে বাতিল হবে।</string>
+    <string name="backup_enable_toast">%1$s ব্যাকআপ চালু — অপেক্ষমাণ আইটেম আবার চলবে।</string>
+    <string name="backup_permission_grant">অনুমতি দিন</string>
+    <string name="backup_state_on">চালু</string>
+    <string name="backup_state_off">বন্ধ</string>
+    <string name="backup_sms_unavailable">এই ডিভাইস/Play পলিসিতে SMS ব্যাকআপ সমর্থিত নয় — সৎভাবে দেখানো হচ্ছে, কোনো বাইপাস নেই।</string>
+    <string name="backup_reconcile_now">এখনই নতুন কনটেন্ট দেখুন</string>
+    <string name="backup_reconcile_started">ব্যাকআপ চেক শুরু হয়েছে — আপলোড ব্যাকগ্রাউন্ডে চলবে।</string>
+    <string name="backup_encryption_note">সব ব্যাকআপ কনটেন্ট আপলোডের আগে এই ডিভাইসেই এনক্রিপ্ট হয়। কী কখনো আপনার পরিবারের অ্যাকাউন্টের বাইরে যায় না।</string>
+</resources>

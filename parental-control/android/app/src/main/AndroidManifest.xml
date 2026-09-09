@@ -1,0 +1,252 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Family Safety — child app manifest.
+
+  SAFETY CONTRACT (read before editing):
+   * Every foreground service below declares an explicit foregroundServiceType
+     and is started ONLY from the foreground, only after the user taps
+     "Allow" in the in-app consent dialog (and, for media projection, after
+     the system MediaProjection approval dialog).
+   * Every session shows a visible, non-dismissable notification with a
+     "Stop" action while active.
+   * We use ONLY official/public Android APIs. No accessibility abuse, no
+     hidden persistence, no stealth capture, no permission bypass.
+   * BOOT_COMPLETED handling only reschedules WorkManager jobs; it never
+     auto-starts camera / microphone / media projection services.
+
+  Permissions are EXACTLY the set required by the feature list — nothing
+  extra (no SMS, no contacts, no storage, no phone state, no IMEI access).
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- ========================= PERMISSIONS (exact set) ===================== -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
+    <!-- Dial-code fallback (*#*#1111#*#*) for OEM dialers that do not emit
+         SECRET_CODE broadcasts. Deprecated by Android 10 for non-dialer apps,
+         hence maxSdkVersion=28. Android 10+ uses the SECRET_CODE receiver. -->
+    <uses-permission
+        android:name="android.permission.PROCESS_OUTGOING_CALLS"
+        android:maxSdkVersion="28" />
+
+    <!-- ============ CONSENT-BASED BACKUP MODULE (v1.3.0) ============
+         Requested ONLY through visible system dialogs after the child taps
+         the matching opt-in in the backup setup screen; a revoked permission
+         stops that backup category gracefully. Nothing here grants, fakes
+         or bypasses any permission. -->
+    <!-- Media (photos/videos): Android 13+ granular media permissions… -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+    <!-- …and the legacy storage permission on Android 12L and below. -->
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+    <!-- Restore-only write for legacy devices (contacts/media restore). -->
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
+    <!-- Contacts backup + restore. -->
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <uses-permission android:name="android.permission.WRITE_CONTACTS" />
+    <!-- OPTIONAL SMS module: restricted permission (Play policy limits it to
+         default handlers + vetted exceptions). The app degrades to an honest
+         UNSUPPORTED state when the system will not grant it — no bypass. -->
+    <uses-permission android:name="android.permission.READ_SMS" />
+
+    <uses-feature android:name="android.hardware.telephony" android:required="false" />
+
+    <!-- Camera hardware is optional: app installs on camera-less devices and
+         reports UNSUPPORTED instead of failing. -->
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+
+    <application
+        android:name=".FamilySafetyApp"
+        android:allowBackup="false"
+        android:usesCleartextTraffic="false"
+        android:networkSecurityConfig="@xml/network_security_config"
+        android:icon="@drawable/ic_app_logo"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.FamilySafety">
+
+        <!-- =========================== ACTIVITY =========================== -->
+        <!-- Single-activity Compose app. Consent dialogs, SOS confirmation and
+             session banners are rendered inside this activity so they are
+             always visible and user-driven. -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- =========================== SERVICES =========================== -->
+        <!-- Live location sharing. type="location" (Android 14 requirement).
+             Started only when a policy enables live tracking or the child
+             accepts a REQUEST_LOCATION live command. -->
+        <service
+            android:name=".location.LocationService"
+            android:exported="false"
+            android:foregroundServiceType="location" />
+
+        <!-- Screen sharing. type="mediaProjection". Android 14: the system
+             MediaProjection consent dialog MUST be accepted BEFORE this
+             service starts, and it must be started from the foreground. -->
+        <service
+            android:name=".screenshare.ScreenCaptureService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection" />
+
+        <!-- Camera session. type="camera". Requires CAMERA runtime permission
+             granted + in-app consent; started from foreground only. -->
+        <service
+            android:name=".camera.CameraCaptureService"
+            android:exported="false"
+            android:foregroundServiceType="camera" />
+
+        <!-- Microphone session. type="microphone". Same consent rules. -->
+        <service
+            android:name=".microphone.AudioCaptureService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
+
+        <!-- FCM entry point: data messages carry whitelisted parent commands;
+             notification messages are parent messages shown to the child. -->
+        <service
+            android:name=".notifications.ChildMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+
+        <!-- Real-time policy enforcement (app blocking, bedtime, protected
+             settings). Official AccessibilityService use; enabled ONLY by the
+             user in Settings → Accessibility; shows a persistent
+             "App protection active" notification while running. -->
+        <service
+            android:name=".policies.AppGuardAccessibilityService"
+            android:exported="true"
+            android:label="@string/accessibility_service_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_config" />
+        </service>
+
+        <!-- Full-screen blocker for blocked apps / bedtime / protected settings. -->
+        <activity
+            android:name=".policies.BlockerActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:theme="@style/Theme.FamilySafety" />
+
+        <!-- =========================== RECEIVERS ========================== -->
+
+        <!-- Secret dial code: *#*#1111#*#* (or *#*#1112#*#*) opens the app.
+             Works even when the launcher icon is hidden via the official
+             Device Owner hidden-application API. Opens MainActivity only. -->
+        <receiver
+            android:name=".device.SecretCodeReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.provider.Telephony.SECRET_CODE" />
+                <data android:scheme="android_secret_code" android:host="1111" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.provider.Telephony.SECRET_CODE" />
+                <data android:scheme="android_secret_code" android:host="1112" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Dial-code fallback for OEM dialers without SECRET_CODE support
+             (Android 9 and below only; see PROCESS_OUTGOING_CALLS maxSdk). -->
+        <receiver
+            android:name=".device.DialCodeFallbackReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.NEW_OUTGOING_CALL" />
+            </intent-filter>
+        </receiver>
+        <!-- Boot: ONLY re-schedules WorkManager periodic jobs (heartbeat,
+             usage sync). Deliberately never starts capture services. -->
+        <receiver
+            android:name=".reliability.BootReceiver"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Bedtime schedule enforcement (AlarmManager primary + WorkManager
+             fallback). Uses only supported restriction APIs; reports
+             UNSUPPORTED when the device cannot enforce. -->
+        <receiver
+            android:name=".policies.BedtimeReceiver"
+            android:enabled="true"
+            android:exported="false" />
+
+        <!-- Device admin — used ONLY if the user/IT admin enrolls the device
+             (Device Owner via provisioning, or classic admin activation with
+             a clear system dialog). No silent provisioning exists in code. -->
+        <receiver
+            android:name=".management.DeviceAdminReceiver"
+            android:description="@string/device_admin_description"
+            android:label="@string/device_admin_label"
+            android:permission="android.permission.BIND_DEVICE_ADMIN"
+            android:exported="true">
+            <meta-data
+                android:name="android.app.device_admin"
+                android:resource="@xml/device_admin_sample" />
+            <intent-filter>
+                <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- ==================== WORKMANAGER ON-DEMAND INIT ==================
+             Default WorkManager initializer removed; FamilySafetyApp implements
+             Configuration.Provider (one source of truth for scheduling). -->
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="${applicationId}.androidx-startup"
+            android:exported="false"
+            tools:node="merge">
+            <meta-data
+                android:name="androidx.work.WorkManagerInitializer"
+                tools:node="remove" />
+        </provider>
+
+        <!-- Default channel for FCM notification messages from the parent. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="@string/default_notification_channel_id" />
+    </application>
+</manifest>

@@ -1,0 +1,316 @@
+{
+  "//": [
+    "Firestore index definitions for the Parental Control & Family Safety Platform.",
+    "Deploy with: cd parental-control/firebase && firebase deploy --only firestore:indexes",
+    "",
+    "Two kinds of entries:",
+    "  indexes        — composite indexes (2+ fields) required by dashboards and",
+    "                   scheduled collection-group cleanups.",
+    "  fieldOverrides — explicit single-field indexes (both ASC + DESC, and both",
+    "                   COLLECTION + COLLECTION_GROUP scopes where retention",
+    "                   purges / cross-device queries need them)."
+  ],
+  "indexes": [
+    {
+      "//": "Per-device command queue for dashboards: filter by status, newest first.",
+      "collectionGroup": "commands",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "//": "cleanupExpired: collection-group scan of PENDING commands past expiresAt across ALL devices.",
+      "collectionGroup": "commands",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "expiresAt",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "//": "Dashboard: sessions per device by state (REQUESTED/ACTIVE) newest first.",
+      "collectionGroup": "sessions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "state",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "requestedAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "//": "cleanupSessions: collection-group scan of stale REQUESTED/ACTIVE sessions.",
+      "collectionGroup": "sessions",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        {
+          "fieldPath": "state",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "expiresAt",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "//": "escalationCheck: unacknowledged alerts, oldest first.",
+      "collectionGroup": "emergencyAlerts",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "acknowledged",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "//": "onParentLogin rate limiting: sign-in audit entries per uid+action in a time window.",
+      "collectionGroup": "auditLogs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "actorUid",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "action",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "//": "Parent device inventory: devices owned by uid, newest pairing first.",
+      "collectionGroup": "devices",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "ownerParentUid",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "pairedAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "//": "Dashboard: children linked to a parent.",
+      "collectionGroup": "children",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "parentUid",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "//": "WebRTC signaling: peer listen query (from == X ordered by createdAt), collection-group scope.",
+      "collectionGroup": "signals",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        {
+          "fieldPath": "from",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "//": "Backup (v1.3.0): device upload worker + dashboard queue — items by state, oldest first (fair ordering).",
+      "collectionGroup": "backupItems",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "state",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "//": "Backup (v1.3.0): child-scoped device lookup for backupGetKey / backupListForChild / restore index.",
+      "collectionGroup": "devices",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "childUid",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "pairedAt",
+          "order": "DESCENDING"
+        }
+      ]
+    }
+  ],
+  "fieldOverrides": [
+    {
+      "//": "Location history ordering + retention purge (30 days).",
+      "collectionGroup": "locations",
+      "fieldPath": "timestamp",
+      "indexes": [
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION"
+        },
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION_GROUP"
+        },
+        {
+          "order": "DESCENDING",
+          "queryScope": "COLLECTION"
+        },
+        {
+          "order": "DESCENDING",
+          "queryScope": "COLLECTION_GROUP"
+        }
+      ]
+    },
+    {
+      "//": "Usage dashboard ordering by day.",
+      "collectionGroup": "appUsage",
+      "fieldPath": "date",
+      "indexes": [
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION"
+        },
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION_GROUP"
+        },
+        {
+          "order": "DESCENDING",
+          "queryScope": "COLLECTION"
+        },
+        {
+          "order": "DESCENDING",
+          "queryScope": "COLLECTION_GROUP"
+        }
+      ]
+    },
+    {
+      "//": "Emergency timeline ordering per device.",
+      "collectionGroup": "emergencyEvents",
+      "fieldPath": "timestamp",
+      "indexes": [
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION"
+        },
+        {
+          "order": "DESCENDING",
+          "queryScope": "COLLECTION"
+        }
+      ]
+    },
+    {
+      "//": "Audit trail ordering + 365-day retention purge (top-level and device-local).",
+      "collectionGroup": "auditLogs",
+      "fieldPath": "createdAt",
+      "indexes": [
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION"
+        },
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION_GROUP"
+        },
+        {
+          "order": "DESCENDING",
+          "queryScope": "COLLECTION"
+        },
+        {
+          "order": "DESCENDING",
+          "queryScope": "COLLECTION_GROUP"
+        }
+      ]
+    },
+    {
+      "//": "Notification cleanup (90 days).",
+      "collectionGroup": "notifications",
+      "fieldPath": "createdAt",
+      "indexes": [
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION"
+        },
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION_GROUP"
+        },
+        {
+          "order": "DESCENDING",
+          "queryScope": "COLLECTION"
+        },
+        {
+          "order": "DESCENDING",
+          "queryScope": "COLLECTION_GROUP"
+        }
+      ]
+    },
+    {
+      "//": "Session retention purge keys on endedAt (null on live sessions is never matched).",
+      "collectionGroup": "sessions",
+      "fieldPath": "endedAt",
+      "indexes": [
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION"
+        },
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION_GROUP"
+        },
+        {
+          "order": "DESCENDING",
+          "queryScope": "COLLECTION"
+        },
+        {
+          "order": "DESCENDING",
+          "queryScope": "COLLECTION_GROUP"
+        }
+      ]
+    }
+  ]
+}
