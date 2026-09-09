@@ -61,6 +61,10 @@ local-*
 # ============================================================
 parental-control/android/app/google-services.json
 **/google-services.json
+# EXCEPTION: the Android client config is public-by-design (its API key ships
+# inside every APK) and the owner asked to track it so CI builds connect to
+# Firebase without a repo secret. Server-side secrets stay ignored below.
+!parental-control/android/app/google-services.json
 !**/google-services.json.example
 **/serviceAccountKey.json
 **/firebase-adminsdk*.json

@@ -3,12 +3,11 @@
 # • Builds on every push that touches the Android module (and manually via
 #   workflow_dispatch).
 # • Gradle 8.5 + JDK 17 (matched to AGP 8.2.2 / Kotlin 1.9.22).
-# • google-services.json is taken from the GOOGLE_SERVICES_JSON repository
-#   secret (paste the FULL raw JSON of the file Firebase console gave you —
-#   repo settings → Secrets and variables → Actions → New repository secret).
-#   If the secret is not set, the checked-in example file is used so CI stays
-#   green — but the APK will NOT connect to Firebase until you add the real
-#   one (expected: it is gitignored on purpose).
+# • google-services.json: the REAL Android client config is committed at
+#   parental-control/android/app/google-services.json (public-by-design — its
+#   API key ships inside every APK). This step prefers that committed file;
+#   falls back to the GOOGLE_SERVICES_JSON repository secret, then to the
+#   checked-in example file so CI stays green even without either.
 # • APK is uploaded as a build artifact: Actions → run → Artifacts →
 #   app-debug-apk (installable directly on a device).
 #
@@ -53,13 +52,23 @@ jobs:
         env:
           GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
         run: |
-          if [ -n "$GOOGLE_SERVICES_JSON" ]; then
+          if [ -f google-services.json ]; then
+            echo "google-services.json: using committed file checked into the repo"
+          elif [ -n "$GOOGLE_SERVICES_JSON" ]; then
             printf '%s' "$GOOGLE_SERVICES_JSON" > google-services.json
             echo "google-services.json: using GOOGLE_SERVICES_JSON secret"
           else
             cp google-services.json.example google-services.json
-            echo "WARNING: GOOGLE_SERVICES_JSON secret not set — using placeholder example file. Build will pass but the APK will not connect to Firebase."
+            echo "WARNING: no committed file and GOOGLE_SERVICES_JSON secret not set — using placeholder example file. Build will pass but the APK will not connect to Firebase."
           fi
+          python3 - <<'PYEOF'
+          import json
+          with open("google-services.json") as f:
+              cfg = json.load(f)
+          pkg = cfg["client"][0]["client_info"]["android_client_info"]["package_name"]
+          print(f"google-services.json parsed OK — package: {pkg}, project: {cfg['project_info']['project_id']}")
+          assert pkg == "org.setbd.parentcontrol", f"package mismatch: {pkg}"
+          PYEOF
 
       - name: Build debug APK
         working-directory: parental-control/android

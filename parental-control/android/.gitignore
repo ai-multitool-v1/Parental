@@ -5,8 +5,8 @@ local.properties
 *.apk
 *.aab
 
-# Firebase config contains project keys — keep the example, ignore the real file.
-app/google-services.json
+# Firebase Android client config is public-by-design (API key ships inside
+# every APK) — the real file IS tracked so CI builds connect to Firebase.
 
 # IDE
 .idea/
