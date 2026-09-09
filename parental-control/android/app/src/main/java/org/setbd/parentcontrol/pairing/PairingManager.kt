@@ -4,17 +4,18 @@ import android.content.Context
 import android.os.Build
 import com.google.firebase.FirebaseException
 import com.google.firebase.FirebaseNetworkException
-import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.functions.FirebaseFunctions
 import com.google.firebase.functions.FirebaseFunctionsException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import org.setbd.parentcontrol.auth.AuthRepository
 import org.setbd.parentcontrol.di.ServiceLocator
 import org.setbd.parentcontrol.security.AuditLogger
-import com.google.firebase.functions.FirebaseFunctions
 
 /** Lifecycle of the pairing flow as rendered by [PairingScreen]. */
 sealed class PairingState {
@@ -60,7 +61,7 @@ class PairingManager(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private val _state = MutableStateFlow<PairingState>(PairingState.Idle)
-    val state: kotlinx.coroutines.flow.StateFlow<PairingState> = _state
+    val state: StateFlow<PairingState> = _state
 
     val isPaired: Boolean get() = ServiceLocator.secureStore.isPaired()
 
