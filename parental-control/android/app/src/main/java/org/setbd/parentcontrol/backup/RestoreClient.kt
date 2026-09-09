@@ -5,12 +5,11 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.provider.ContactsContract
 import androidx.core.content.ContextCompat
-import com.google.firebase.functions.FirebaseFunctions
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import org.setbd.parentcontrol.di.ServiceLocator
+import org.setbd.parentcontrol.net.SecureApi
 import org.setbd.parentcontrol.security.AuditLogger
 import java.io.File
 import java.io.FileOutputStream
@@ -53,8 +52,6 @@ import java.net.URL
  */
 class RestoreClient(private val context: Context) {
 
-    private val functions = FirebaseFunctions.getInstance()
-
     /** True when contacts can be written back (restore capability probe). */
     fun canRestoreContacts(): Boolean =
         ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_CONTACTS) ==
@@ -66,11 +63,7 @@ class RestoreClient(private val context: Context) {
      */
     suspend fun listRestorable(childUid: String): List<RestoreItem> = withContext(Dispatchers.IO) {
         try {
-            val res = functions.getHttpsCallable("backupListForChild")
-                .call(mapOf("childUid" to childUid))
-                .await()
-            @Suppress("UNCHECKED_CAST")
-            val data = res.data as? Map<String, Any?> ?: return@withContext emptyList()
+            val data = SecureApi.call("backupListForChild", mapOf("childUid" to childUid))
             @Suppress("UNCHECKED_CAST")
             val items = data["items"] as? List<Map<String, Any?>> ?: emptyList()
             items.mapNotNull { row ->

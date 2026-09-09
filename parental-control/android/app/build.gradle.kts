@@ -31,6 +31,16 @@ android {
 
         // FCM default notification channel (parent messages).
         resValue("string", "default_notification_channel_id", "channel_parent_messages")
+
+        // Trusted backend base URL (Cloudflare Worker). Injected from a
+        // gradle property or CI variable — contains NO secret. Set e.g.
+        //   ./gradlew assembleDebug -PSECURE_API_BASE=https://xxx.workers.dev
+        // or add a SECURE_API_BASE repository variable in GitHub Actions.
+        buildConfigField(
+            "String",
+            "SECURE_API_BASE",
+            "\"${project.findProperty("SECURE_API_BASE") ?: System.getenv("SECURE_API_BASE") ?: ""}\""
+        )
     }
 
     buildTypes {

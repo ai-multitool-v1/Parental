@@ -72,6 +72,12 @@ jobs:
 
       - name: Build debug APK
         working-directory: parental-control/android
+        env:
+          # Trusted backend (Cloudflare Worker) base URL — set this repo
+          # VARIABLE to the deployed worker URL, e.g.
+          #   https://parental-control-api.<your-subdomain>.workers.dev
+          # (no secret; the APK embeds only the public endpoint address)
+          SECURE_API_BASE: ${{ vars.SECURE_API_BASE }}
         run: gradle assembleDebug --stacktrace
 
       - name: Locate APK

@@ -5,11 +5,10 @@ import android.net.Uri
 import android.provider.MediaStore
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
-import com.google.firebase.functions.FirebaseFunctions
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import org.setbd.parentcontrol.di.ServiceLocator
+import org.setbd.parentcontrol.net.SecureApi
 import org.setbd.parentcontrol.security.AuditLogger
 import java.io.File
 import java.io.FileInputStream
@@ -129,8 +128,6 @@ class BackupScanWorker(appContext: Context, params: WorkerParameters) :
 class BackupUploadWorker(appContext: Context, params: WorkerParameters) :
     CoroutineWorker(appContext, params) {
 
-    private val functions = FirebaseFunctions.getInstance()
-
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         if (!ServiceLocator.secureStore.isPaired()) return@withContext Result.success()
 
@@ -155,11 +152,10 @@ class BackupUploadWorker(appContext: Context, params: WorkerParameters) :
     private suspend fun uploadOne(repo: BackupItemRepository, item: BackupItem): UploadOutcome {
         // ---------- 1. server-side eligibility (the authoritative gate) ----
         val decision = try {
-            @Suppress("UNCHECKED_CAST")
-            val res = functions.getHttpsCallable("backupCreateUploadUrl")
-                .call(mapOf("deviceId" to item.deviceId, "itemId" to item.itemId))
-                .await()
-            res.data as? Map<String, Any?> ?: emptyMap()
+            SecureApi.call(
+                "backupCreateUploadUrl",
+                mapOf("deviceId" to item.deviceId, "itemId" to item.itemId)
+            )
         } catch (e: Exception) {
             repo.markState(item, BackupItemState.FAILED, BlockReason.NETWORK)
             return UploadOutcome(item, BackupItemState.FAILED, BlockReason.NETWORK)
@@ -225,17 +221,14 @@ class BackupUploadWorker(appContext: Context, params: WorkerParameters) :
 
         // ---------- 5. server verifies + finalizes -------------------------
         val done = try {
-            @Suppress("UNCHECKED_CAST")
-            val res = functions.getHttpsCallable("backupCompleteUpload")
-                .call(
-                    mapOf(
-                        "deviceId" to item.deviceId,
-                        "itemId" to item.itemId,
-                        "ivB64" to encrypted.ivB64,
-                    )
+            SecureApi.call(
+                "backupCompleteUpload",
+                mapOf(
+                    "deviceId" to item.deviceId,
+                    "itemId" to item.itemId,
+                    "ivB64" to encrypted.ivB64,
                 )
-                .await()
-            res.data as? Map<String, Any?> ?: emptyMap()
+            )
         } catch (e: Exception) {
             repo.markState(item, BackupItemState.FAILED, BlockReason.NETWORK)
             return UploadOutcome(item, BackupItemState.FAILED, BlockReason.NETWORK)

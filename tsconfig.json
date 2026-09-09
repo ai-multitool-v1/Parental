@@ -41,6 +41,7 @@
     "examples",
     "tests",
     "skills",
-    "parental-control"
+    "parental-control",
+    "worker"
   ]
 }

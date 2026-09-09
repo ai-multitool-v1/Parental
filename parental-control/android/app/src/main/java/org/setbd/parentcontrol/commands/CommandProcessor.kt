@@ -7,6 +7,7 @@ import org.setbd.parentcontrol.di.ServiceLocator
 import org.setbd.parentcontrol.di.SessionType
 import org.setbd.parentcontrol.location.LocationService
 import org.setbd.parentcontrol.management.EnforcementResult
+import org.setbd.parentcontrol.net.SecureApi
 import org.setbd.parentcontrol.notifications.ParentNotification
 import org.setbd.parentcontrol.security.AuditLogger
 import com.google.firebase.firestore.FirebaseFirestore
@@ -402,6 +403,20 @@ class CommandProcessor(private val context: Context) {
                     ),
                     SetOptions.merge(),
                 ).await()
+        }
+        // Trusted-backend mirror (zero-cost deployment): without Cloud
+        // Functions there is no result trigger, so the parent-facing command
+        // doc + session consent state machine are driven by this explicit
+        // call. Best-effort — the device-local trail above is already written.
+        runCatching {
+            SecureApi.call(
+                "commandResult",
+                mapOf(
+                    "commandId" to commandId,
+                    "status" to status.name,
+                    "result" to mapOf("message" to message),
+                )
+            )
         }
     }
 

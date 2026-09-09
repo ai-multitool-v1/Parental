@@ -1,20 +1,19 @@
 package org.setbd.parentcontrol.backup
 
-import com.google.firebase.functions.FirebaseFunctions
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import org.setbd.parentcontrol.di.ServiceLocator
+import org.setbd.parentcontrol.net.SecureApi
 import java.util.concurrent.ConcurrentHashMap
 
 /**
  * BackupKeyManager — on-device access to the child's backup DEK.
  *
  * SECURITY:
- *  - The DEK is provisioned by Cloud Functions at pairing time and stored
- *    server-side ONLY in wrapped form (AES-256-GCM under a KEK in Secret
- *    Manager). The APK contains NO key material (nothing hardcoded).
- *  - This class fetches it over the authenticated callable channel
+ *  - The DEK is provisioned by the trusted backend at pairing time and
+ *    stored server-side ONLY in wrapped form (AES-256-GCM under a KEK in a
+ *    Worker secret). The APK contains NO key material (nothing hardcoded).
+ *  - This class fetches it over the authenticated SecureApi channel
  *    (backupGetKey; App Check + device claim + rate limit + server audit)
  *    and caches it in SecureStore (Keystore-backed EncryptedSharedPreferences
  *    on API 23+; documented plain fallback on 21/22).
@@ -25,8 +24,6 @@ import java.util.concurrent.ConcurrentHashMap
  *    with SecureStore.clearAll() on unpair.
  */
 class BackupKeyManager {
-
-    private val functions = FirebaseFunctions.getInstance()
 
     /** childUid → cached key (memory-only hot cache; persisted in SecureStore). */
     private val hot = ConcurrentHashMap<String, String>()
@@ -44,13 +41,11 @@ class BackupKeyManager {
             return@withContext cached
         }
 
-        val result = functions.getHttpsCallable("backupGetKey")
-            .call(mapOf("childUid" to childUid, "reason" to "upload"))
-            .await()
-        @Suppress("UNCHECKED_CAST")
-        val data = result.data as? Map<String, Any?>
-            ?: throw BackupUnavailableException("KEY_RESPONSE_MALFORMED")
-        val keyB64 = data["keyB64"] as? String
+        val result = SecureApi.call(
+            "backupGetKey",
+            mapOf("childUid" to childUid, "reason" to "upload")
+        )
+        val keyB64 = result["keyB64"] as? String
         if (keyB64.isNullOrBlank()) {
             throw BackupUnavailableException("KEY_RESPONSE_MALFORMED")
         }

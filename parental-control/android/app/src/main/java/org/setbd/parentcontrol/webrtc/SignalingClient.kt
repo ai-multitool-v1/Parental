@@ -5,8 +5,8 @@ import org.setbd.parentcontrol.di.ServiceLocator
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
-import com.google.firebase.functions.FirebaseFunctions
 import kotlinx.coroutines.tasks.await
+import org.setbd.parentcontrol.net.SecureApi
 
 /** One signaling envelope exchanged over Firestore. */
 data class Signal(
@@ -84,11 +84,11 @@ class SignalingClient {
             ).await()
         }.onFailure { Log.w(TAG, "bye signal failed: ${it.message}") }
         runCatching {
-            FirebaseFunctions.getInstance(FUNCTIONS_REGION)
-                .getHttpsCallable("endSession")
-                .call(mapOf("sessionId" to sessionId))
-                .await()
-        }.onFailure { Log.w(TAG, "endSession callable failed: ${it.message}") }
+            SecureApi.call(
+                "endSession",
+                mapOf("sessionId" to sessionId)
+            )
+        }.onFailure { Log.w(TAG, "endSession call failed: ${it.message}") }
     }
 
     suspend fun sendOffer(sessionId: String, sdp: String) =

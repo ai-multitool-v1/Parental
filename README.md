@@ -114,10 +114,22 @@ npm run dev          # → http://localhost:3000
 
 ## ☁️ Firebase Setup — ধাপে ধাপে (বিস্তারিত)
 
+> ### 💰 ZERO-COST পথ (Blaze লাগবে না)
+> Spark (free) plan-ই যথেষ্ট: **Auth + Firestore ফ্রি**; Cloud Functions-এর
+> privileged logic-এর বদলে এখন **Cloudflare Worker** (`worker/` ফোল্ডার) ব্যবহৃত হয়
+> — deploy guide: [`worker/README.md`](worker/README.md)। Blaze plan ছাড়াই
+> পুরো প্ল্যাটফর্ম (pairing, command, live session, encrypted backup on R2,
+> admin) চলে। Worker deploy করার পর দুটি env বসাতে হবে:
+> - Web: `NEXT_PUBLIC_SECURE_API_BASE=https://parental-control-api.<sub>.workers.dev`
+> - Android: GitHub repo **Variables** → `SECURE_API_BASE` (CI APK-তে বসে যাবে)
+>
+> নিচের ধাপ ৬–৭ (Cloud Functions + Secrets) শুধু তখনই দরকার যখন Blaze-ঘেঁষা
+> ক্লাসিক deployment চান — free deployment-এ বাদ দিতে পারেন।
+
 ### ধাপ ১: Firebase project তৈরি
 
 1. [console.firebase.google.com](https://console.firebase.google.com) → **Add project** → নাম দিন (যেমন `setbd-parental`)।
-2. তৈরির পর **Upgrade to Blaze** (Spark plan-এ Cloud Functions deploy করা যায় না)। কার্ড যোগ করলেও free quota-র মধ্যে খরচ হবে না।
+2. **Free Spark plan-এই থাকুন** — ZERO-COST architecture-এ (উপরের বক্স দেখুন) Blaze দরকার নেই। Cloud Functions না চালিয়ে `worker/` deploy করুন।
 3. Project settings ⚙️ → **General** → নিচে **Your apps**।
 
 ### ধাপ ২: Web app register করুন (ওয়েবসাইটের জন্য)

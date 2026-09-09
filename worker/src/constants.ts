@@ -1,4 +1,3 @@
-import "server-only";
 /**
  * constants.ts — platform-wide constants (single source of truth).
  * Ported 1:1 from parental-control/functions/src/lib/constants.ts so the
@@ -16,7 +15,7 @@ export const PAIRING_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
 export const PAIRING_CODE_TTL_MS = 5 * 60 * 1000;
 
-/** Codes are deleted by sweep this long after expiry (replay buffer). */
+/** Codes are deleted by the sweep this long after expiry (replay buffer). */
 export const PAIRING_CODE_GRACE_MS = 15 * 60 * 1000;
 
 export const MAX_ACTIVE_PAIRING_CODES_PER_PARENT = 5;

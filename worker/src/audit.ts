@@ -1,4 +1,3 @@
-import "server-only";
 /**
  * audit.ts — platform-wide, append-only audit trail (port of functions'
  * lib/audit.ts). Clients have ZERO access per firestore.rules.
@@ -8,7 +7,7 @@ import "server-only";
  */
 
 import { FieldValue } from "firebase-admin/firestore";
-import { db } from "./core";
+import { db } from "./admin";
 
 export type AuditActorType = "PARENT" | "DEVICE" | "SYSTEM" | "ADMIN";
 

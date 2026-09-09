@@ -4,17 +4,16 @@ import android.content.Context
 import android.os.Build
 import com.google.firebase.FirebaseException
 import com.google.firebase.FirebaseNetworkException
-import com.google.firebase.functions.FirebaseFunctions
-import com.google.firebase.functions.FirebaseFunctionsException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.tasks.await
 import org.setbd.parentcontrol.auth.AuthRepository
 import org.setbd.parentcontrol.di.ServiceLocator
+import org.setbd.parentcontrol.net.SecureApi
+import org.setbd.parentcontrol.net.SecureApiException
 import org.setbd.parentcontrol.security.AuditLogger
 
 /** Lifecycle of the pairing flow as rendered by [PairingScreen]. */
@@ -31,14 +30,15 @@ sealed class PairingState {
 /**
  * Secure pairing, SERVER-SIDE contract (v2):
  *
- *   1. PARENT dashboard → callable `generatePairingCode` → server writes
- *      `pairingCodes/{code}` (5-min TTL, single-use). Clients can NEVER read
- *      or write pairingCodes (firestore.rules deny all) — the code itself is
- *      the only shared secret.
- *   2. CHILD device (this class) → signs in anonymously → callable
- *      `confirmPairing(code, deviceId, deviceName)` → the SERVER atomically
- *      creates devices/{deviceId} + parents link + children/{uid}, marks the
- *      code used, and sets custom claims {deviceRole: "childDevice", deviceId}.
+ *   1. PARENT dashboard → `generatePairingCode` on the trusted backend →
+ *      server writes `pairingCodes/{code}` (5-min TTL, single-use). Clients
+ *      can NEVER read or write pairingCodes (firestore.rules deny all) —
+ *      the code itself is the only shared secret.
+ *   2. CHILD device (this class) → signs in anonymously → calls
+ *      `confirmPairing(code, deviceId, deviceName)` on the trusted backend →
+ *      the SERVER atomically creates devices/{deviceId} + parents link +
+ *      children/{uid}, marks the code used, and sets custom claims
+ *      {deviceRole: "childDevice", deviceId}.
  *   3. We force a token refresh to pick the claims up, flip the local
  *      `paired` flag and hand control to [ServiceLocator.onPaired].
  *
@@ -57,7 +57,6 @@ class PairingManager(
         ServiceLocator.auditLogger,
     )
 
-    private val functions: FirebaseFunctions = FirebaseFunctions.getInstance()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private val _state = MutableStateFlow<PairingState>(PairingState.Idle)
@@ -90,23 +89,20 @@ class PairingManager(
                 }
                 is AuthRepository.SignInResult.Success -> {
                     try {
-                        @Suppress("UNCHECKED_CAST")
-                        val result = functions.getHttpsCallable("confirmPairing")
-                            .call(
-                                mapOf(
-                                    "code" to code,
-                                    "deviceId" to ServiceLocator.deviceId,
-                                    "deviceName" to deviceName(),
-                                )
+                        val result = SecureApi.call(
+                            "confirmPairing",
+                            mapOf(
+                                "code" to code,
+                                "deviceId" to ServiceLocator.deviceId,
+                                "deviceName" to deviceName(),
                             )
-                            .await()
-                            .data as? Map<String, Any?>
+                        )
 
                         // Pick up {deviceRole, deviceId} custom claims NOW —
                         // rules deny device telemetry until the fresh token.
                         auth.refreshIdToken()
 
-                        val parentUid = result?.get("parentUid") as? String
+                        val parentUid = result["parentUid"] as? String
                         ServiceLocator.secureStore.setPaired(true)
                         auditLogger.log(
                             actorUid = auth.childUid.value,
@@ -174,25 +170,27 @@ class PairingManager(
     private fun deviceName(): String =
         "${Build.MANUFACTURER} ${Build.MODEL}".trim().take(64)
 
-    /** Callable/transport errors → actionable message (never raw stack traces). */
+    /** Transport/API errors → actionable message (never raw stack traces). */
     private fun describeError(e: Exception): String {
-        if (e is FirebaseNetworkException) {
+        if (e is FirebaseNetworkException || e is java.io.IOException) {
             return "No internet connection. Connect and try again. / ইন্টারনেট সংযোগ নেই — আবার চেষ্টা করুন।"
         }
-        if (e is FirebaseFunctionsException) {
+        if (e is SecureApiException) {
             return when (e.code) {
-                FirebaseFunctionsException.Code.NOT_FOUND ->
+                "not-found" ->
                     "Invalid code — check it on the dashboard and try again. / কোড ভুল — ড্যাশবোর্ড মিলিয়ে আবার লিখুন।"
-                FirebaseFunctionsException.Code.FAILED_PRECONDITION ->
+                "failed-precondition" ->
                     e.message ?: "This code has expired or was already used. / কোডের মেয়াদ শেষ বা ব্যবহৃত।"
-                FirebaseFunctionsException.Code.PERMISSION_DENIED ->
+                "permission-denied" ->
                     e.message ?: "Not allowed to pair this device. / এই ডিভাইস পেয়ার করা যাচ্ছে না।"
-                FirebaseFunctionsException.Code.ALREADY_EXISTS ->
+                "already-exists" ->
                     "This device is already paired to another family. Unpair first or contact your parent. / ডিভাইসটি আগে থেকেই পেয়ারড।"
-                FirebaseFunctionsException.Code.RESOURCE_EXHAUSTED ->
+                "resource-exhausted" ->
                     e.message ?: "Too many attempts. Please wait. / অনেকবার চেষ্টা — একটু অপেক্ষা করুন।"
-                FirebaseFunctionsException.Code.UNAUTHENTICATED ->
+                "unauthenticated" ->
                     "Sign-in expired. Try again. / সাইন-ইন শেষ — আবার চেষ্টা করুন।"
+                "unavailable" ->
+                    e.message ?: "Server unreachable. Try again later. / সার্ভারে পৌঁছানো যাচ্ছে না — পরে চেষ্টা করুন।"
                 else ->
                     e.message ?: "Pairing failed. Try again. / পেয়ারিং ব্যর্থ — আবার চেষ্টা করুন।"
             }

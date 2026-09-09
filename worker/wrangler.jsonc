@@ -1,0 +1,46 @@
+// wrangler.jsonc — Cloudflare Workers config for the Parental Control backend.
+//
+// FREE TIER (no payment method needed):
+//   - Workers: 100k requests/day
+//   - R2: 10 GB storage + 1M Class-A / 10M Class-B ops per month, free egress
+//   - Cron Triggers: included
+//
+// SETUP (one-time, see README in this folder):
+//   1. npx wrangler login
+//   2. npx wrangler r2 bucket create parental-backups
+//   3. Set the SECRETS (never in this file):
+//        npx wrangler secret put FIREBASE_SERVICE_ACCOUNT_JSON
+//        npx wrangler secret put BACKUP_KEK          # openssl rand -base64 32
+//        npx wrangler secret put BACKUP_URL_SECRET   # openssl rand -hex 32
+//   4. npx wrangler deploy
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "parental-control-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-01-01",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // Native R2 binding — the Worker IS the only thing that can touch the
+  // bucket. No R2 access keys exist anywhere (nothing to leak into the APK).
+  "r2_buckets": [
+    {
+      "binding": "BACKUP_BUCKET",
+      "bucket_name": "parental-backups"
+    }
+  ],
+
+  // Daily sweep: expire stale commands, close stale sessions, retention
+  // purge, SOS escalation reminders (replaces the Blaze-only Cloud Scheduler).
+  "triggers": {
+    "crons": ["0 3 * * *"]
+  },
+
+  // Non-secret vars (safe to commit). Secrets go to `wrangler secret put`.
+  "vars": {
+    // Set ENFORCE_APP_CHECK to "1" ONLY after allowlisting Play Integrity.
+    "ENFORCE_APP_CHECK": "0",
+    // Browser dashboard origins allowed to call the Worker (comma list).
+    // Keep "*" while testing; lock to your dashboard origin in production.
+    "ALLOWED_ORIGINS": "*"
+  }
+}

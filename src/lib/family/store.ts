@@ -35,6 +35,15 @@ import {
   isBedtimeActive,
   uid,
 } from "./engine";
+import {
+  isRealMode,
+  realLogin,
+  realSignup,
+  realLogout,
+  realGeneratePairingCode,
+  RealApiError,
+  type RealProfile,
+} from "./real";
 
 const COMMAND_TTL = 5 * 60_000;
 const CONSENT_TTL = 60_000;
@@ -434,6 +443,29 @@ export const useFamily = create<Store>((set, get) => {
         addAudit({ actorRole: "system", action: "PARENT_LOGIN", result: "DENIED", detail: "ব্যানকৃত অ্যাকাউন্ট — লগইন প্রত্যাহৃত (admin policy)" });
         return "banned";
       }
+      // REAL mode (zero-cost): Firebase Auth + Cloudflare Worker profile gate.
+      if (isRealMode()) {
+        const res = await realLogin(e, password);
+        if (res.result !== "ok" || !res.profile) return res.result as LoginResultCode;
+        const p: RealProfile = res.profile;
+        set({
+          parent: {
+            uid: p.uid,
+            name: p.name,
+            email: p.email,
+            mfaEnabled: false,
+            loginAt: Date.now(),
+            plan: p.plan,
+          },
+        });
+        addAudit({
+          actorRole: "parent",
+          action: "PARENT_LOGIN",
+          result: "APPROVED",
+          detail: `Firebase Auth + Worker verify — ${p.plan === "premium" ? "প্রিমিয়াম" : "ফ্রি"} প্ল্যান`,
+        });
+        return "ok";
+      }
       let status = 0;
       let data: AuthApiResponse;
       try {
@@ -479,6 +511,25 @@ export const useFamily = create<Store>((set, get) => {
 
     signup: async (name, email, password, confirm) => {
       if (!name.trim() || !email.trim() || !password || !confirm) return "empty";
+      if (password !== confirm) return "mismatch";
+      // REAL mode (zero-cost): Firebase Auth account + Worker profile.
+      if (isRealMode()) {
+        const res = await realSignup(name, email, password);
+        if (res.result !== "ok" || !res.profile) return res.result as SignupResultCode;
+        const p: RealProfile = res.profile;
+        set({
+          parent: {
+            uid: p.uid,
+            name: p.name,
+            email: p.email,
+            mfaEnabled: false,
+            loginAt: Date.now(),
+            plan: p.plan,
+          },
+        });
+        addAudit({ actorRole: "parent", action: "PARENT_SIGNUP", result: "APPROVED", detail: "Firebase Auth অ্যাকাউন্ট তৈরি হয়েছে (free plan)" });
+        return "ok";
+      }
       let data: AuthApiResponse;
       try {
         ({ data } = await postAuth("/api/auth/signup", { name, email, password, confirm }));
@@ -498,6 +549,7 @@ export const useFamily = create<Store>((set, get) => {
 
     logout: () => {
       addAudit({ actorRole: "parent", action: "PARENT_LOGOUT", result: "EXECUTED", detail: "সেশন শেষ" });
+      if (isRealMode()) void realLogout();
       set({ parent: null });
     },
 
@@ -527,6 +579,21 @@ export const useFamily = create<Store>((set, get) => {
     generatePairingCode: () => {
       const p = get().pairing;
       if (p && !p.used && Date.now() < p.expiresAt) return; // max 1 active
+      // REAL mode: the code is issued by the trusted backend (single-use,
+      // 5-min TTL, server-audited) — the demo engine cannot fake it.
+      if (isRealMode()) {
+        realGeneratePairingCode()
+          .then(({ code, expiresAt }) => {
+            set({ pairing: { code, createdAt: Date.now(), expiresAt, used: false } });
+            addAudit({ actorRole: "parent", action: "PAIRING_CODE_CREATED", result: "APPROVED", detail: "Worker-issued 8-অক্ষর কোড, ৫ মিনিট TTL, single-use" });
+          })
+          .catch((err: unknown) => {
+            const msg = err instanceof RealApiError ? err.message : "কোড তৈরি ব্যর্থ";
+            addAudit({ actorRole: "parent", action: "PAIRING_CODE_CREATED", result: "DENIED", detail: msg });
+            toast.error(`পেয়ারিং কোড তৈরি হয়নি: ${msg}`);
+          });
+        return;
+      }
       const code = genCode();
       set({ pairing: { code, createdAt: Date.now(), expiresAt: Date.now() + 5 * 60_000, used: false } });
       addAudit({ actorRole: "parent", action: "PAIRING_CODE_CREATED", result: "APPROVED", detail: "8-অক্ষর, ৫ মিনিট TTL, single-use" });
