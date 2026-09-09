@@ -45,19 +45,19 @@ class InstalledAppsRepository(private val context: Context) {
         }
         return apps.mapNotNull { info ->
             try {
-                val versionName = if (Build.VERSION.SDK_INT >= 33) {
-                    pm.getPackageInfo(info.packageName, PackageManager.PackageInfoFlags.of(0)).versionName
+                val pkgInfo = if (Build.VERSION.SDK_INT >= 33) {
+                    pm.getPackageInfo(info.packageName, PackageManager.PackageInfoFlags.of(0))
                 } else {
                     @Suppress("DEPRECATION")
-                    pm.getPackageInfo(info.packageName, 0).versionName
+                    pm.getPackageInfo(info.packageName, 0)
                 }
                 InstalledApp(
                     packageName = info.packageName,
                     appName = info.loadLabel(pm).toString(),
-                    versionName = versionName ?: "",
+                    versionName = pkgInfo.versionName ?: "",
                     isSystem = (info.flags and ApplicationInfo.FLAG_SYSTEM) != 0,
-                    firstInstallAtMs = info.firstInstallTime,
-                    lastUpdateAtMs = info.lastUpdateTime,
+                    firstInstallAtMs = pkgInfo.firstInstallTime,
+                    lastUpdateAtMs = pkgInfo.lastUpdateTime,
                 )
             } catch (e: Exception) {
                 null // Package vanished mid-scan — skip it.

@@ -87,7 +87,7 @@ class WebRtcClient(private val context: Context) {
 
             // --- local tracks ------------------------------------------------
             if (capturer != null) {
-                val source = factory.createVideoSource(isScreencast = kind == "SCREEN")
+                val source = factory.createVideoSource(kind == "SCREEN")
                 videoSource = source
                 val helper = SurfaceTextureHelper.create("fs-capture", eglBase.eglBaseContext)
                 surfaceHelper = helper

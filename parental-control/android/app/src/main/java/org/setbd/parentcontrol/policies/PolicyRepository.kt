@@ -210,7 +210,7 @@ class PolicyRepository(private val context: Context) {
             dailyLimitsMinutes = limits,
             bedtime = bedtime,
             emergencyContacts = contacts,
-            updatedAtMs = (data["updatedAt"] as? com.google.firebase.firestore.Timestamp)?.toDate()?.time
+            updatedAtMs = (data["updatedAt"] as? com.google.firebase.Timestamp)?.toDate()?.time
                 ?: System.currentTimeMillis(),
             hideAppIcon = settings?.get("hideAppIcon") as? Boolean ?: false,
             protectSettings = settings?.get("protectSettings") as? Boolean ?: false,

@@ -11,7 +11,7 @@ import org.setbd.parentcontrol.notifications.ParentNotification
 import org.setbd.parentcontrol.security.AuditLogger
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
-import com.google.firebase.firestore.Timestamp
+import com.google.firebase.Timestamp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
