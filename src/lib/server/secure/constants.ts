@@ -1,13 +1,10 @@
+import "server-only";
 /**
  * constants.ts — platform-wide constants (single source of truth).
- *
- * Values here are the server-side contract that firestore.rules, the Android
- * app and the parent dashboard all rely on. Changing a TTL/limit here changes
- * it for every callable on the next deploy.
+ * Ported 1:1 from parental-control/functions/src/lib/constants.ts so the
+ * Android app + firestore.rules contract stays identical on the zero-cost
+ * deployment. The functions/ copy remains the source for Blaze deployments.
  */
-
-/** All v2 callables + schedulers deploy to one region. */
-export const REGION = "us-central1";
 
 /* ────────────────────────────── pairing ────────────────────────────────── */
 
@@ -19,7 +16,7 @@ export const PAIRING_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
 export const PAIRING_CODE_TTL_MS = 5 * 60 * 1000;
 
-/** Codes are deleted by cleanupExpired this long after expiry (replay buffer). */
+/** Codes are deleted by sweep this long after expiry (replay buffer). */
 export const PAIRING_CODE_GRACE_MS = 15 * 60 * 1000;
 
 export const MAX_ACTIVE_PAIRING_CODES_PER_PARENT = 5;
@@ -38,10 +35,6 @@ export const ADMIN_RATE_LIMIT: RateLimitOpts = { max: 30, windowMs: 60 * 60 * 10
 export const BACKUP_UPLOAD_RATE_LIMIT: RateLimitOpts = { max: 240, windowMs: 60 * 60 * 1000 };
 export const BACKUP_DOWNLOAD_RATE_LIMIT: RateLimitOpts = { max: 60, windowMs: 60 * 60 * 1000 };
 export const BACKUP_KEY_RATE_LIMIT: RateLimitOpts = { max: 30, windowMs: 60 * 60 * 1000 };
-
-/** Auth blocking function: parent sign-ins per sliding window. */
-export const LOGIN_RATE_MAX = 10;
-export const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 
 /* ───────────────────────────── sessions ────────────────────────────────── */
 
@@ -92,10 +85,3 @@ export const RETENTION_DAYS: Record<string, number> = {
   auditLogs: 365,
 };
 export const RETENTION_BATCH_LIMIT = 5000;
-
-/* ─────────────────── Secret Manager / env: Cloudflare R2 ───────────────── */
-/** Names of the secrets the backup callables mount (see README → R2 setup). */
-export const R2_ACCOUNT_ID_PARAM = "R2_ACCOUNT_ID";
-export const R2_ACCESS_KEY_ID_PARAM = "R2_ACCESS_KEY_ID";
-export const R2_SECRET_ACCESS_KEY_PARAM = "R2_SECRET_ACCESS_KEY";
-export const R2_BUCKET_PARAM = "R2_BUCKET_NAME";

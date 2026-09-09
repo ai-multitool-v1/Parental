@@ -1,25 +1,19 @@
+import "server-only";
 /**
- * audit.ts — platform-wide, append-only audit trail.
- *
- * One entry per security-relevant event, written to the top-level
- * `auditLogs` collection (clients have ZERO access per firestore.rules —
- * read/write false for everyone except the Admin SDK).
+ * audit.ts — platform-wide, append-only audit trail (port of functions'
+ * lib/audit.ts). Clients have ZERO access per firestore.rules.
  *
  * PRIVACY: details carry IDs, states and reasons — never message bodies,
  * file names, contact data or any other user content.
- *
- * A single failed audit write must never fail the caller's main operation
- * (audits are mirrored/best-effort EXCEPT where the caller explicitly wants
- * the event recorded before continuing — those callers handle it themselves).
  */
 
 import { FieldValue } from "firebase-admin/firestore";
-import { db } from "./verify";
+import { db } from "./core";
 
 export type AuditActorType = "PARENT" | "DEVICE" | "SYSTEM" | "ADMIN";
 
 export interface AuditEntry {
-  /** Which callable/trigger is writing (e.g. "confirmPairing"). */
+  /** Which handler is writing (e.g. "confirmPairing"). */
   functionName: string;
   /** uid, `device:{deviceId}` or "system". */
   actorUid: string;
@@ -48,8 +42,7 @@ export async function writeAudit(entry: AuditEntry): Promise<void> {
       createdAt: FieldValue.serverTimestamp(),
     });
   } catch (err) {
-    // Auditing is critical but must not break the user-facing operation;
-    // the error is surfaced in Cloud Logging for ops alerting.
+    // Auditing is critical but must not break the user-facing operation.
     console.error(
       JSON.stringify({
         severity: "ERROR",
