@@ -15,7 +15,6 @@ import org.setbd.parentcontrol.emergency.EmergencyManager
 import org.setbd.parentcontrol.location.LocationRepository
 import org.setbd.parentcontrol.management.DevicePolicyManagerWrapper
 import org.setbd.parentcontrol.microphone.MicrophoneSessionManager
-import org.setbd.parentcontrol.notifications.TokenRefresher
 import org.setbd.parentcontrol.pairing.PairingManager
 import org.setbd.parentcontrol.policies.PolicyRepository
 import org.setbd.parentcontrol.screenshare.ScreenShareSessionManager
@@ -107,8 +106,6 @@ object ServiceLocator {
         private set
     lateinit var permissionReporter: PermissionReporter
         private set
-    lateinit var tokenRefresher: TokenRefresher
-        private set
     lateinit var screenShareManager: ScreenShareSessionManager
         private set
     lateinit var cameraSessionManager: CameraSessionManager
@@ -143,7 +140,6 @@ object ServiceLocator {
         usageStatsRepository = UsageStatsRepository(appContext)
         installedAppsRepository = InstalledAppsRepository(appContext)
         permissionReporter = PermissionReporter(appContext)
-        tokenRefresher = TokenRefresher(appContext)
         webRtcClient = WebRtcClient(appContext)
         screenShareManager = ScreenShareSessionManager(appContext)
         cameraSessionManager = CameraSessionManager(appContext)
