@@ -108,15 +108,13 @@ export const generatePairingCode: Handler = async (env, caller, _data) => {
     .sort((a, b) => b.expiresAt.toMillis() - a.expiresAt.toMillis());
   if (activeDocs.length > 0) {
     // Newest valid code; the client just shows it with its remaining TTL.
+    // (Handler returns the DATA object — the router wraps it as {ok,data}.)
     const best = activeDocs[0]!;
     return {
-      ok: true,
-      data: {
-        code: best.code,
-        expiresAt: best.expiresAt.toMillis(),
-        ttlSeconds: Math.max(1, Math.floor((best.expiresAt.toMillis() - nowMs) / 1000)),
-        reused: true,
-      },
+      code: best.code,
+      expiresAt: best.expiresAt.toMillis(),
+      ttlSeconds: Math.max(1, Math.floor((best.expiresAt.toMillis() - nowMs) / 1000)),
+      reused: true,
     };
   }
 
