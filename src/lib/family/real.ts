@@ -98,32 +98,65 @@ function apiBase(): string {
 export async function currentIdToken(): Promise<string | null> {
   const u = auth().currentUser;
   if (!u) return null;
-  return u.getIdToken(false);
+  try {
+    return await u.getIdToken(false);
+  } catch {
+    // Token refresh hits securetoken.googleapis.com — network failure there
+    // must NOT leak as a raw FirebaseError (it would bypass error mapping).
+    throw new RealApiError(
+      "network",
+      "Session token refresh failed — check your internet connection."
+    );
+  }
 }
 
-/**
- * Calls the trusted Worker: POST /api/secure/<name>.
- * Throws RealApiError(code, message) on server-defined errors.
- */
-export async function callSecure(
-  name: string,
-  data: Record<string, unknown> = {}
+const NETWORK_MSG =
+  "Server unreachable. Check your internet and try again.";
+
+export class RealApiError extends Error {
+  constructor(public code: string, message: string) {
+    super(message);
+  }
+}
+
+/** Thrown when the TCP/TLS/DNS layer itself fails (fetch/abort). */
+class NetworkUnreachable extends RealApiError {
+  constructor() {
+    super("network", NETWORK_MSG);
+  }
+}
+
+const DIRECT_TIMEOUT_MS = 15_000;
+const PROXY_TIMEOUT_MS = 25_000;
+
+/** One POST with timeout; network-layer failures become NetworkUnreachable. */
+async function postJson(
+  url: string,
+  token: string,
+  data: Record<string, unknown>,
+  timeoutMs: number
 ): Promise<Record<string, unknown>> {
-  const token = await currentIdToken();
-  if (!token) throw new RealApiError("unauthenticated", "Sign in first.");
-  const res = await fetch(`${apiBase()}/api/secure/${name}`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify(data),
-  });
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(data),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch {
+    // TypeError: Failed to fetch / abort — DNS, SNI-block, TLS, offline.
+    throw new NetworkUnreachable();
+  }
   let body: Record<string, unknown> = {};
   try {
     body = (await res.json()) as Record<string, unknown>;
   } catch {
-    throw new RealApiError("network", "Server unreachable. Try again.");
+    // Reached the edge but body wasn't JSON (HTML error page etc.).
+    throw new NetworkUnreachable();
   }
   if (!res.ok || body["ok"] !== true) {
     const err = body["error"] as { code?: string; message?: string } | undefined;
@@ -135,10 +168,45 @@ export async function callSecure(
   return (body["data"] ?? {}) as Record<string, unknown>;
 }
 
-export class RealApiError extends Error {
-  constructor(public code: string, message: string) {
-    super(message);
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Calls the trusted Worker: POST /api/secure/<name>.
+ * Throws RealApiError(code, message) on every failure path.
+ *
+ * Resilience chain (some ISPs — notably in Bangladesh — block/throttle
+ * `*.workers.dev`, so a single direct attempt is NOT enough):
+ *   1. direct Worker call
+ *   2. +600ms direct retry (transient mobile-data blip)
+ *   3. same-origin proxy /api/secure/<name> (Vercel function → Worker,
+ *      server-to-server, unaffected by the user's ISP)
+ */
+export async function callSecure(
+  name: string,
+  data: Record<string, unknown> = {}
+): Promise<Record<string, unknown>> {
+  const token = await currentIdToken();
+  if (!token) throw new RealApiError("unauthenticated", "Sign in first.");
+
+  const direct = `${apiBase()}/api/secure/${name}`;
+  const proxy = `/api/secure/${name}`;
+
+  try {
+    return await postJson(direct, token, data, DIRECT_TIMEOUT_MS);
+  } catch (e1) {
+    if (!(e1 instanceof NetworkUnreachable)) throw e1;
+    if (typeof console !== "undefined") console.warn(`[secure] direct call failed (${name}), retrying…`);
   }
+
+  await sleep(600);
+  try {
+    return await postJson(direct, token, data, DIRECT_TIMEOUT_MS);
+  } catch (e2) {
+    if (!(e2 instanceof NetworkUnreachable)) throw e2;
+    if (typeof console !== "undefined") console.warn(`[secure] direct retry failed (${name}), trying same-origin proxy…`);
+  }
+
+  return postJson(proxy, token, data, PROXY_TIMEOUT_MS);
 }
 
 /* ───────────────────────────── auth mapping ─────────────────────────────── */

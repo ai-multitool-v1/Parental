@@ -6,10 +6,10 @@
 4. Create child (anonymous signUp) -> child ID token
 5. confirmPairing (runTransaction: read code, write device/children, update code)
 """
-import json, urllib.request, urllib.error, subprocess, uuid
+import json, urllib.request, urllib.error, subprocess, uuid, os
 
 GS = "/home/z/my-project/parental-control/android/app/google-services.json"
-WORKER = "https://parental-control-api.ai-multitools.workers.dev"
+WORKER = os.environ.get("WORKER_BASE", "https://parental-control-api.ai-multitools.workers.dev")
 with open(GS) as f:
     api_key = json.load(f)["client"][0]["api_key"][0]["current_key"]
 

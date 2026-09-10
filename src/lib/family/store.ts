@@ -677,6 +677,7 @@ export const useFamily = create<Store>((set, get) => {
                 const e = err2 instanceof RealApiError ? err2 : err1;
                 const code = e instanceof RealApiError ? e.code : "";
                 let msg = e instanceof RealApiError ? e.message : "সার্ভারে পৌঁছানো যায়নি — ইন্টারনেট দেখে আবার চেষ্টা করুন";
+                if (code === "network") msg = "সার্ভারে সংযোগ করা যায়নি — সরাসরি ও ফলব্যাক প্রক্সি, দুইভাবেই চেষ্টা করা হয়েছে। ইন্টারনেট/VPN দেখে আবার চেষ্টা করুন।";
                 if (code === "resource-exhausted") msg = `অনেকবার কোড তৈরি হয়েছে — কয়েক মিনিট অপেক্ষা করে আবার চেষ্টা করুন। (${msg})`;
                 if (code === "unauthenticated") msg = "সাইন-ইন শেষ হয়ে গেছে — লগআউট করে আবার সাইন ইন করুন";
                 fail(msg);
