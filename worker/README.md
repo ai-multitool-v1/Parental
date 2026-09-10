@@ -46,15 +46,35 @@ Android app / Web dashboard
 | `PUT /backup/put?k&e&s` / `GET /backup/get?k&e&s` | signed | R2 proxy (HMAC-verified, expiring) |
 | cron `0 3 * * *` | — | sweep: expire commands/codes, close sessions, retention purge, SOS escalation |
 
-## Deploy (one-time, ~15 minutes)
+## Deploy — two ways (both FREE)
+
+### Way A (recommended — GitHub Actions, kono local tool lagbe na)
+
+1. Cloudflare dashboard → top-right avatar → **My Profile → API Tokens →
+   Create Token** → template **"Edit Cloudflare Workers"** → permissions-এ
+   আরও যোগ করুন: **Account · R2 · Edit** → Account Resources: আপনার account →
+   **Continue → Create Token** → token copy করুন (একবারই দেখাবে)।
+2. GitHub repo → **Settings → Secrets and variables → Actions → Secrets →
+   New repository secret**:
+   - `CLOUDFLARE_API_TOKEN` = ওই token
+   - `FIREBASE_SERVICE_ACCOUNT_JSON` = Firebase console → Project settings →
+     Service accounts → **Generate new private key** → পুরো JSON ফাইলের ভেতরের
+     text (Admin SDK — token verify / Firestore / FCM-এর জন্য)
+   - (optional) `BACKUP_KEK` + `BACKUP_URL_SECRET` — না দিলে প্রথম deploy-এ
+     নিজে থেকেই সুরক্ষিতভাবে তৈরি হয়ে যাবে, পরে স্থায়ীভাবে থাকবে।
+3. GitHub **Actions → Deploy Cloudflare Worker → Run workflow** → শেষ হলে
+   deploy log-এ Worker URL দেখবেন:
+   `https://parental-control-api.<your-subdomain>.workers.dev`
+
+### Way B (local CLI)
 
 ```bash
 cd worker
 npm install
 npx wrangler login
 
-# 1. Private backup bucket (free: 10 GB + free egress)
-npx wrangler r2 bucket create parental-backups
+# 1. Backup bucket (free: 10 GB + free egress) — না থাকলেই তৈরি হবে
+npx wrangler r2 bucket create parental
 
 # 2. Secrets (NEVER in wrangler.jsonc / git / APK)
 npx wrangler secret put FIREBASE_SERVICE_ACCOUNT_JSON   # Firebase console → Project settings → Service accounts → Generate new private key

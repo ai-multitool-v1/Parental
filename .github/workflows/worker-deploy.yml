@@ -1,0 +1,168 @@
+# Deploy the trusted backend (Cloudflare Worker) — ZERO-COST stack
+#
+# • Deploys worker/ to Cloudflare Workers on every push that touches it
+#   (and manually via workflow_dispatch).
+# • Auto-provisions runtime secrets ONCE:
+#     - BACKUP_KEK / BACKUP_URL_SECRET  → generated with openssl on first run
+#       (stable forever after; provide repo secrets with the same names to
+#        control the values yourself — e.g. when migrating accounts).
+#     - FIREBASE_SERVICE_ACCOUNT_JSON   → must be provided as a repo secret
+#       (Firebase console → Project settings → Service accounts → Generate
+#        new private key). NEVER committed, never printed.
+# • Creates the R2 bucket "parental" if it does not exist (binding is in
+#   wrangler.jsonc — no R2 access keys exist anywhere).
+# • Skips gracefully (yellow warning, not a red X) until you add the
+#   CLOUDFLARE_API_TOKEN repository secret.
+#
+# Required repo SECRETS:
+#   CLOUDFLARE_API_TOKEN           (API token: Workers Scripts:Edit + R2:Edit)
+#   FIREBASE_SERVICE_ACCOUNT_JSON  (full service-account JSON — required for auth)
+# Optional repo SECRETS:
+#   BACKUP_KEK, BACKUP_URL_SECRET  (auto-generated once if absent)
+#
+# The Worker URL printed in the deploy log goes into the repo VARIABLE
+# SECURE_API_BASE, which the "Build Android APK" workflow bakes into every APK.
+#
+# Develop By Silent Exploit Team Bd · Powered By AI MultiTool
+
+name: Deploy Cloudflare Worker
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "worker/**"
+      - ".github/workflows/worker-deploy.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: worker-deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy Worker + provision secrets
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: worker
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      # ── Gate: run only after the Cloudflare API token secret exists ──
+      - name: Check Cloudflare credentials
+        id: cf
+        env:
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          if [ -z "$CF_TOKEN" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Secret 'CLOUDFLARE_API_TOKEN' is not set — skipping deploy. Add it via repo Settings → Secrets and variables → Actions (see worker/README.md → Deploy)."
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Ensure R2 bucket exists
+        if: steps.cf.outputs.configured == 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CI: "true"
+        run: |
+          # Account id + bucket name come from wrangler.jsonc ("parental").
+          if npx wrangler r2 bucket info parental >/dev/null 2>&1; then
+            echo "R2 bucket 'parental' already exists"
+          else
+            npx wrangler r2 bucket create parental
+          fi
+
+      # ── Provision runtime secrets (idempotent — existing values are kept) ──
+      - name: Provision worker secrets
+        if: steps.cf.outputs.configured == 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CI: "true"
+          FB_SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+          KEK_IN: ${{ secrets.BACKUP_KEK }}
+          URLS_IN: ${{ secrets.BACKUP_URL_SECRET }}
+        run: |
+          set -euo pipefail
+
+          have_secret() {
+            npx wrangler secret list 2>/dev/null | grep -q "\"$1\""
+          }
+
+          # 1) Firebase service account — REQUIRED for every authenticated call
+          if have_secret FIREBASE_SERVICE_ACCOUNT_JSON; then
+            echo "FIREBASE_SERVICE_ACCOUNT_JSON: already set on worker"
+          elif [ -n "${FB_SA:-}" ]; then
+            printf '%s' "$FB_SA" | npx wrangler secret put FIREBASE_SERVICE_ACCOUNT_JSON
+            echo "FIREBASE_SERVICE_ACCOUNT_JSON: uploaded from repo secret"
+          else
+            echo "::warning::FIREBASE_SERVICE_ACCOUNT_JSON missing (repo secret) — the Worker will answer 'not configured' until it is added."
+          fi
+
+          # 2) BACKUP_KEK — generated ONCE on first deploy, then stable forever
+          if [ -n "${KEK_IN:-}" ]; then
+            printf '%s' "$KEK_IN" | npx wrangler secret put BACKUP_KEK
+            echo "BACKUP_KEK: set from repo secret"
+          elif have_secret BACKUP_KEK; then
+            echo "BACKUP_KEK: already set on worker (kept — changing it breaks old backups)"
+          else
+            openssl rand -base64 32 | npx wrangler secret put BACKUP_KEK
+            echo "BACKUP_KEK: generated (32 random bytes, base64)"
+          fi
+
+          # 3) BACKUP_URL_SECRET — HMAC key for the short-lived R2 proxy URLs
+          if [ -n "${URLS_IN:-}" ]; then
+            printf '%s' "$URLS_IN" | npx wrangler secret put BACKUP_URL_SECRET
+            echo "BACKUP_URL_SECRET: set from repo secret"
+          elif have_secret BACKUP_URL_SECRET; then
+            echo "BACKUP_URL_SECRET: already set on worker"
+          else
+            openssl rand -hex 32 | npx wrangler secret put BACKUP_URL_SECRET
+            echo "BACKUP_URL_SECRET: generated (32 random bytes, hex)"
+          fi
+
+      - name: Deploy Worker
+        if: steps.cf.outputs.configured == 'true'
+        id: deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CI: "true"
+        run: |
+          OUT=$(npx wrangler deploy 2>&1)
+          echo "$OUT"
+          URL=$(echo "$OUT" | grep -oE 'https://[a-zA-Z0-9.-]+\.workers\.dev' | head -n 1 || true)
+          echo "url=${URL:-unknown}" >> "$GITHUB_OUTPUT"
+
+      - name: Job summary (next steps)
+        if: steps.cf.outputs.configured == 'true'
+        env:
+          URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          {
+            echo "## ✅ Worker deployed"
+            echo ""
+            echo "**Worker URL:** \`$URL\`"
+            echo ""
+            echo "### Next steps"
+            echo "1. Repo → Settings → Secrets and variables → Actions → **Variables** →"
+            echo "   \`SECURE_API_BASE\` = \`$URL\`"
+            echo "2. Re-run the **Build Android APK** workflow → Artifacts → \`app-debug-apk\`"
+            echo "3. Web dashboard: set \`NEXT_PUBLIC_SECURE_API_BASE\` = \`$URL\`"
+            echo ""
+            echo "Live logs: \`cd worker && npx wrangler tail\`"
+          } >> "$GITHUB_SUMMARY"
