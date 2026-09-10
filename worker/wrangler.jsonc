@@ -48,7 +48,8 @@
     // Set ENFORCE_APP_CHECK to "1" ONLY after allowlisting Play Integrity.
     "ENFORCE_APP_CHECK": "0",
     // Browser dashboard origins allowed to call the Worker (comma list).
-    // Keep "*" while testing; lock to your dashboard origin in production.
-    "ALLOWED_ORIGINS": "*"
+    // Locked to the production dashboard origin (Vercel). Need local dev?
+    // Append ",http://localhost:3000" — never ship "*".
+    "ALLOWED_ORIGINS": "https://parental-tan.vercel.app"
   }
 }
