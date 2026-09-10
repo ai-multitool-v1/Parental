@@ -27,10 +27,14 @@ class ChildMessagingService : FirebaseMessagingService() {
         val data = message.data
 
         // ---- fast path: parent command ------------------------------------
-        if (data["type"] == "COMMAND") {
+        // The Worker pushes data {kind: "COMMAND", commandId, type,
+        // payload(JSON), expiresAtMs} — the push payload alone does NOT satisfy
+        // the security gates, so wakeFromFcm() fetches the authoritative
+        // Firestore command doc and runs the full pipeline.
+        if (data["kind"] == "COMMAND" || data["type"] == "COMMAND") {
             val commandId = data["commandId"]
             if (!commandId.isNullOrBlank()) {
-                ServiceLocator.commandProcessor.enqueue(commandId, data)
+                ServiceLocator.commandProcessor.wakeFromFcm(commandId)
             }
             return
         }

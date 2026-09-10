@@ -44,7 +44,13 @@ import {
   realSignup,
   realLogout,
   realGeneratePairingCode,
+  realListDevices,
+  realDispatchCommand,
+  realRequestSession,
+  realSetPolicy,
+  realSetBackupPolicy,
   RealApiError,
+  type RealDeviceDoc,
   type RealProfile,
 } from "./real";
 
@@ -180,7 +186,7 @@ type Store = FamilyState & {
   pairDevice: (code: string) => boolean;
   unpairDevice: () => void;
   /* command pipeline */
-  dispatchCommand: (type: CommandType, payload?: string) => void;
+  dispatchCommand: (type: CommandType, payload?: string, extra?: Record<string, unknown>) => void;
   /* sessions */
   respondConsent: (consentId: string, approved: boolean) => void;
   stopSession: (type: SessionType) => void;
@@ -218,9 +224,50 @@ type Store = FamilyState & {
   authChecking: boolean;
   /** অ্যাপ-মাউন্টে একবার ডাকতে হয় (page.tsx) — একবারই চলে। */
   bootstrapAuth: () => void;
+  /* REAL-mode realtime (listDevices poll — ৫ সেকেন্ড) */
+  /** লগইন/সেশন-রিস্টোরের পর একবার ডাকা হয় — poll loop চালু করে। */
+  startRealtime: () => void;
+  /** Worker listDevices-এর একটি ডিভাইস রো → zustand স্টেটে merge। */
+  applyRealDevice: (doc: RealDeviceDoc) => void;
 };
 
 let authBootstrapStarted = false;
+
+/* ══════════════ REAL-mode realtime poll machinery ══════════════
+ * Worker listDevices endpoint প্রতি ৫ সেকেন্ডে (tab দৃশ্যমান হলে; লুকানো
+ * থাকলে ৩০ সেকেন্ডে) পোল করে — পেয়ার হওয়া ডিভাইস, তার live status/
+ * permissions/policy/backupPolicy এবং pending command-এর ফলাফল আনে।
+ * নতুন ডিভাইস এলে toast + command শেষ হলে success/fail toast — সব realtime।
+ */
+let realtimeTimer: ReturnType<typeof setInterval> | null = null;
+let realtimeInFlight = false;
+let realtimeFirstPollDone = false;
+const seenDeviceIds = new Set<string>();
+const pendingRealCommands = new Map<string, { deviceId: string; type: string; sessionId?: string }>();
+const REALTIME_MS_VISIBLE = 5000;
+const REALTIME_MS_HIDDEN = 30_000;
+const DEVICE_UNPAIRED_ID = "device-unpaired";
+
+function commandLabel(type: string): string {
+  const labels: Record<string, string> = {
+    LOCK_DEVICE: "ডিভাইস লক",
+    REQUEST_LOCATION: "লোকেশন",
+    REQUEST_STATUS: "স্ট্যাটাস রিফ্রেশ",
+    SYNC_APPS: "অ্যাপ সিঙ্ক",
+    SYNC_POLICY: "পলিসি সিঙ্ক",
+    SYNC_USAGE: "ব্যবহার সিঙ্ক",
+    SEND_NOTIFICATION: "নোটিফিকেশন",
+    TRIGGER_SAFETY_CHECK: "সেফটি চেক",
+    REQUEST_PERMISSION: "পারমিশন অনুরোধ",
+    REQUEST_SCREEN_SESSION: "স্ক্রিন সেশন",
+    REQUEST_CAMERA_SESSION: "ক্যামেরা সেশন",
+    REQUEST_AUDIO_SESSION: "অডিও সেশন",
+    STOP_SCREEN_SESSION: "স্ক্রিন স্টপ",
+    STOP_CAMERA_SESSION: "ক্যামেরা স্টপ",
+    STOP_AUDIO_SESSION: "অডিও স্টপ",
+  };
+  return labels[type] ?? type;
+}
 
 let tickCount = 0;
 let lowBatteryNoted = false;
@@ -470,6 +517,7 @@ export const useFamily = create<Store>((set, get) => {
         // লগইন/সাইনআপ action ইতিমধ্যে parent সেট করেছে — ডাবল-সেট এড়াও।
         if (get().parent?.uid === user.uid) {
           set({ authChecking: false });
+          get().startRealtime();
           return;
         }
         // সেশন রিস্টোর: profile কলটি সার্ভারে users/{uid} লেজি-প্রোভিশনও করে।
@@ -486,6 +534,7 @@ export const useFamily = create<Store>((set, get) => {
               },
               authChecking: false,
             });
+            get().startRealtime();
           })
           .catch(() => {
             // Worker সাময়িকভাবে নাগালের বাইরে হলেও ইউজারকে লগ-আউট করা ঠিক নয় —
@@ -501,8 +550,220 @@ export const useFamily = create<Store>((set, get) => {
               },
               authChecking: false,
             });
+            get().startRealtime();
           });
       });
+    },
+
+    /* ---------------- REAL-mode realtime (listDevices poll) ---------------- */
+    startRealtime: () => {
+      if (!isRealMode() || realtimeTimer !== null) return;
+      if (!get().parent) return;
+
+      const tick = async () => {
+        if (realtimeInFlight) return;
+        realtimeInFlight = true;
+        try {
+          const pending = [...pendingRealCommands.entries()].map(([commandId, v]) => ({
+            deviceId: v.deviceId,
+            commandId,
+          }));
+          const { devices, commands } = await realListDevices(pending);
+
+          // ---- device merge + নতুন-ডিভাইস toast ----
+          if (devices.length > 0) {
+            const sorted = [...devices].sort((a, b) => (b.pairedAtMs ?? 0) - (a.pairedAtMs ?? 0));
+            const newest = sorted[0];
+            const isNew = !seenDeviceIds.has(newest.deviceId);
+            sorted.forEach((d) => seenDeviceIds.add(d.deviceId));
+            get().applyRealDevice(newest);
+            if (isNew && realtimeFirstPollDone) {
+              // চাইল্ড এই মুহূর্তে পেয়ার হলো — realtime pairing-success toast!
+              toast.success(`🎉 নতুন ডিভাইস পেয়ার হয়েছে — ${newest.deviceName}`, { duration: 8000 });
+              addAudit({
+                actorRole: "device",
+                action: "PAIR_DEVICE",
+                result: "APPROVED",
+                detail: `realtime: ${newest.deviceName} পেয়ার হয়েছে (Worker listDevices)`,
+              });
+            } else if (isNew && !realtimeFirstPollDone) {
+              toast.success(`📱 পেয়ার করা ডিভাইস সংযুক্ত — ${newest.deviceName}`, { duration: 5000 });
+            }
+          }
+          realtimeFirstPollDone = true;
+
+          // ---- pending command results ----
+          for (const c of commands) {
+            const entry = pendingRealCommands.get(c.commandId);
+            if (!entry || c.status === "PENDING") continue;
+            pendingRealCommands.delete(c.commandId);
+            const ok = c.status === "EXECUTED";
+            set((s) => ({
+              commands: s.commands.map((x) =>
+                x.id === c.commandId
+                  ? {
+                      ...x,
+                      status: ok ? ("executed" as const) : ("failed" as const),
+                      result: ok ? ("OK" as const) : ("UNSUPPORTED" as const),
+                      resultAt: c.completedAtMs ?? Date.now(),
+                    }
+                  : x,
+              ),
+            }));
+            if (ok) {
+              toast.success(`${commandLabel(entry.type)} সম্পন্ন হয়েছে ✅`);
+            } else {
+              const detail = c.result && typeof c.result["message"] === "string" ? (c.result["message"] as string) : "";
+              toast.error(`${commandLabel(entry.type)} ব্যর্থ${detail ? ` — ${detail}` : ""}`);
+            }
+            // ---- সেশন স্টেট ট্রানজিশন (real session ids) ----
+            if (entry.type.startsWith("REQUEST_") && entry.type.endsWith("_SESSION") && entry.sessionId) {
+              patchSession(entry.sessionId, ok
+                ? { state: "active", consent: "approved", startedAt: c.completedAtMs ?? Date.now() }
+                : { state: "declined", consent: "declined", endedAt: c.completedAtMs ?? Date.now() });
+              if (ok) toast.success(`${commandLabel(entry.type)} সক্রিয় — চাইল্ড Allow দিয়েছে`);
+              else toast.info(`${commandLabel(entry.type)} — চাইল্ড অনুমতি দেয়নি`);
+            }
+            if (entry.type.startsWith("STOP_") && entry.sessionId) {
+              patchSession(entry.sessionId, { state: "ended", endedAt: c.completedAtMs ?? Date.now() });
+            }
+          }
+        } catch {
+          /* সাময়িক ব্যর্থতা — পরের টিকে আবার চেষ্টা হবে */
+        } finally {
+          realtimeInFlight = false;
+        }
+      };
+
+      void tick();
+      const arm = () => {
+        if (realtimeTimer !== null) clearInterval(realtimeTimer);
+        realtimeTimer = setInterval(tick, document.hidden ? REALTIME_MS_HIDDEN : REALTIME_MS_VISIBLE);
+      };
+      arm();
+      document.addEventListener("visibilitychange", () => {
+        if (realtimeTimer === null) return;
+        clearInterval(realtimeTimer);
+        realtimeTimer = setInterval(tick, document.hidden ? REALTIME_MS_HIDDEN : REALTIME_MS_VISIBLE);
+      });
+    },
+
+    applyRealDevice: (doc) => {
+      const perm = (doc.permissions ?? {}) as Record<string, unknown>;
+      const pol = (doc.policy ?? {}) as Record<string, unknown>;
+      const bp = (doc.backupPolicy ?? {}) as Record<string, unknown>;
+      const st = get();
+
+      // ---- permissions/current → DevicePermissions ----
+      const bool = (k: string): boolean => perm[k] === true;
+      const lastSeen = doc.lastSeenAtMs ?? 0;
+      const managementModeRaw = typeof perm["managementMode"] === "string" ? (perm["managementMode"] as string) : "";
+      const devicePermissions = {
+        location: bool("locationFine") || bool("locationCoarse"),
+        notifications: bool("notifications"),
+        usageAccess: bool("appUsageAccess"),
+        camera: bool("camera"),
+        microphone: bool("microphone"),
+        screenCapture: bool("screenCapture"),
+        accessibility: bool("accessibilityService"),
+        deviceAdmin: bool("deviceAdmin"),
+        backupMediaPhotos: bool("backupReadMediaImages"),
+        backupMediaVideos: bool("backupReadMediaVideos"),
+        backupContacts: bool("backupReadContacts"),
+        backupSms: bool("backupReadSms"),
+      };
+
+      // ---- policies/current → DevicePolicy (child-native shape) ----
+      const bedtimeRaw = pol["bedtime"] as Record<string, unknown> | null | undefined;
+      const webDays: number[] = Array.isArray(bedtimeRaw?.["days"])
+        ? (bedtimeRaw?.["days"] as unknown[]).map((d) => {
+            const iso = Number(d); // 1=Mon..7=Sun
+            return iso === 7 ? 0 : iso; // web: 0=Sun..6=Sat
+          })
+        : [0, 1, 2, 3, 4, 5, 6];
+      const policy: DevicePolicy = {
+        version: typeof pol["version"] === "number" ? (pol["version"] as number) : st.device.policy.version,
+        updatedAt: Date.now(),
+        blockedApps: Array.isArray(pol["appBlockList"]) ? (pol["appBlockList"] as string[]) : st.device.policy.blockedApps,
+        dailyLimits:
+          pol["dailyLimits"] && typeof pol["dailyLimits"] === "object"
+            ? Object.fromEntries(
+                Object.entries(pol["dailyLimits"] as Record<string, unknown>).map(([k, v]) => [k, Number(v) || 0]),
+              )
+            : st.device.policy.dailyLimits,
+        bedtime: {
+          enabled: !!bedtimeRaw,
+          start: typeof bedtimeRaw?.["start"] === "string" ? (bedtimeRaw["start"] as string) : st.device.policy.bedtime.start,
+          end: typeof bedtimeRaw?.["end"] === "string" ? (bedtimeRaw["end"] as string) : st.device.policy.bedtime.end,
+          days: bedtimeRaw ? webDays : st.device.policy.bedtime.days,
+          allowedApps: Array.isArray(bedtimeRaw?.["allowedPackages"])
+            ? (bedtimeRaw?.["allowedPackages"] as string[])
+            : st.device.policy.bedtime.allowedApps,
+        },
+        locationTracking: st.device.policy.locationTracking,
+        settings: {
+          hideAppIcon:
+            (pol["settings"] as Record<string, unknown> | undefined)?.["hideAppIcon"] === true,
+          protectSettings:
+            (pol["settings"] as Record<string, unknown> | undefined)?.["protectSettings"] === true,
+        },
+      };
+
+      // ---- backupPolicy/current → store.backupPolicy ----
+      const bpCats = bp["categories"] as Record<string, { enabled?: boolean }> | undefined;
+      const backupPolicyPatch = bpCats
+        ? {
+            version: typeof bp["version"] === "number" ? (bp["version"] as number) : st.backupPolicy.version,
+            categories: {
+              photos: { enabled: bpCats["photos"]?.enabled === true },
+              videos: { enabled: bpCats["videos"]?.enabled === true },
+              contacts: { enabled: bpCats["contacts"]?.enabled === true },
+              sms: { enabled: bpCats["sms"]?.enabled === true },
+            },
+          }
+        : {};
+
+      const networkRaw = typeof doc.networkType === "string" ? doc.networkType : "";
+      const netType = networkRaw === "wifi" || networkRaw === "mobile" ? networkRaw : "none";
+      const age = Date.now() - lastSeen;
+      const status: ChildDevice["status"] =
+        netType === "none" ? "offline" : age < 5 * 60_000 ? "online" : age < 15 * 60_000 ? "recently_active" : "offline";
+      patchDevice({
+        id: doc.deviceId,
+        paired: true,
+        locked: doc.locked === true,
+        name: doc.deviceName,
+        childName: doc.childName ?? st.device.childName,
+        childUid: doc.childUid ?? st.device.childUid,
+        model: st.device.model,
+        androidVersion: doc.androidVersion ?? (typeof perm["androidVersion"] === "string" ? (perm["androidVersion"] as string) : st.device.androidVersion),
+        appVersion: doc.appVersion ?? (typeof perm["appVersion"] === "string" ? (perm["appVersion"] as string) : st.device.appVersion),
+        batteryLevel: typeof doc.batteryLevel === "number" ? doc.batteryLevel : st.device.batteryLevel,
+        isCharging: doc.isCharging === true,
+        networkType: netType,
+        status,
+        lastSeen,
+        managementMode:
+          managementModeRaw === "DEVICE_OWNER"
+            ? "device_owner"
+            : managementModeRaw === "PROFILE_OWNER"
+              ? "profile_owner"
+              : managementModeRaw === "ADMIN"
+                ? "admin"
+                : "none",
+        permissions: devicePermissions,
+        reliability: {
+          ...st.device.reliability,
+          lastHeartbeat: lastSeen || st.device.reliability.lastHeartbeat,
+          batteryOptimizationIgnored: bool("batteryOptimizationIgnored"),
+          notificationEnabled: bool("notifications"),
+        },
+        policy,
+        appIconHidden: bool("appIconHidden"),
+      });
+      if (Object.keys(backupPolicyPatch).length > 0) {
+        set((s) => ({ backupPolicy: { ...s.backupPolicy, ...backupPolicyPatch } }));
+      }
     },
 
     /* ---------------- auth (v1.4.1 — server-verified) ---------------- */
@@ -536,6 +797,7 @@ export const useFamily = create<Store>((set, get) => {
           result: "APPROVED",
           detail: `Firebase Auth + Worker verify — ${p.plan === "premium" ? "প্রিমিয়াম" : "ফ্রি"} প্ল্যান`,
         });
+        get().startRealtime();
         return "ok";
       }
       let status = 0;
@@ -600,6 +862,7 @@ export const useFamily = create<Store>((set, get) => {
           },
         });
         addAudit({ actorRole: "parent", action: "PARENT_SIGNUP", result: "APPROVED", detail: "Firebase Auth অ্যাকাউন্ট তৈরি হয়েছে (free plan)" });
+        get().startRealtime();
         return "ok";
       }
       let data: AuthApiResponse;
@@ -729,7 +992,7 @@ export const useFamily = create<Store>((set, get) => {
     },
 
     /* ---------------- command pipeline ---------------- */
-    dispatchCommand: (type, payload) => {
+    dispatchCommand: (type, payload, extra) => {
       const st = get();
       if (!st.parent) return;
       if (!st.device.paired) {
@@ -757,6 +1020,81 @@ export const useFamily = create<Store>((set, get) => {
       if (recent >= RATE_MAX_PER_MIN) {
         addAudit({ actorRole: "system", action: type, result: "DENIED", detail: `rate limit: প্রতি মিনিটে ${RATE_MAX_PER_MIN} command` });
         toast.warning("Rate limit অতিক্রম হয়েছে — এক মিনিট অপেক্ষা করুন");
+        return;
+      }
+      // ── REAL mode: Worker dispatch (child-এর Firestore listener + FCM fast path).
+      // ফলাফল realtime poll (startRealtime) দেখে toast দেখায়।
+      if (isRealMode()) {
+        const deviceId = st.device.id;
+        if (!deviceId || deviceId === DEVICE_UNPAIRED_ID || !st.device.paired) {
+          addAudit({ actorRole: "parent", action: type, result: "DENIED", detail: "আসল ডিভাইস এখনো সিঙ্ক হয়নি (listDevices)" });
+          toast.error("আসল ডিভাইস এখনো সিঙ্ক হয়নি — কয়েক সেকেন্ড পরে আবার চেষ্টা করুন");
+          return;
+        }
+        // Consent-gated live sessions → requestSession (session doc + command একসাথে)।
+        if (type === "REQUEST_SCREEN_SESSION" || type === "REQUEST_CAMERA_SESSION" || type === "REQUEST_AUDIO_SESSION") {
+          const sessType = type === "REQUEST_SCREEN_SESSION" ? ("screen" as const) : type === "REQUEST_CAMERA_SESSION" ? ("camera" as const) : ("audio" as const);
+          toast.info(`${commandLabel(type)} অনুরোধ পাঠানো হচ্ছে…`);
+          realRequestSession(deviceId, sessType)
+            .then((res) => {
+              if (res.commandId) pendingRealCommands.set(res.commandId, { deviceId, type, sessionId: res.sessionId });
+              set((s) => ({
+                commands: cap(
+                  [{ id: res.commandId, type, createdBy: st.parent!.uid, createdAt: Date.now(), expiresAt: res.expiresAtMs || Date.now() + COMMAND_TTL, status: "pending" as const }, ...s.commands],
+                  100,
+                ),
+                sessions: cap(
+                  [{ id: res.sessionId, type: sessType, state: "waiting_child" as const, requestedBy: st.parent!.uid, requestedAt: Date.now(), expiresAt: res.expiresAtMs || Date.now() + 60_000, consent: "pending" as const }, ...s.sessions],
+                  50,
+                ),
+              }));
+              addAudit({ actorRole: "parent", action: `COMMAND_${type}`, result: "PENDING", detail: `session ${res.sessionId.slice(0, 8)}… তৈরি — চাইল্ডের consent অপেক্ষায়` });
+            })
+            .catch((err: unknown) => {
+              toast.error(`${commandLabel(type)} পাঠানো যায়নি — ${err instanceof RealApiError ? err.message : "নেটওয়ার্ক সমস্যা"}`);
+              addAudit({ actorRole: "parent", action: `COMMAND_${type}`, result: "FAILED", detail: "requestSession ব্যর্থ" });
+            });
+          return;
+        }
+        // STOP_* → সক্রিয় সেশনের আসল sessionId লাগবে (Worker strict payload)।
+        let extraPayload: Record<string, unknown> = {};
+        if (type === "STOP_SCREEN_SESSION" || type === "STOP_CAMERA_SESSION" || type === "STOP_AUDIO_SESSION") {
+          const t: SessionType = type.includes("SCREEN") ? "screen" : type.includes("CAMERA") ? "camera" : "audio";
+          const active = get().sessions.find((x) => x.type === t && (x.state === "active" || x.state === "waiting_child"));
+          if (!active) {
+            toast.info("কোনো সক্রিয় সেশন নেই");
+            return;
+          }
+          extraPayload = { sessionId: active.id };
+        }
+        const payloadObj: Record<string, unknown> =
+          type === "SEND_NOTIFICATION"
+            ? { message: String(payload ?? "").slice(0, 500) }
+            : type === "REQUEST_PERMISSION"
+              ? { permission: String(extra?.["permission"] ?? "") }
+              : extraPayload;
+        toast.info(`${commandLabel(type)} পাঠানো হচ্ছে…`);
+        realDispatchCommand(deviceId, type, payloadObj)
+          .then((res) => {
+            if (res.commandId) {
+              pendingRealCommands.set(res.commandId, {
+                deviceId,
+                type,
+                sessionId: typeof extraPayload["sessionId"] === "string" ? (extraPayload["sessionId"] as string) : undefined,
+              });
+            }
+            set((s) => ({
+              commands: cap(
+                [{ id: res.commandId, type, createdBy: st.parent!.uid, createdAt: Date.now(), expiresAt: res.expiresAtMs || Date.now() + COMMAND_TTL, status: "pending" as const, payload }, ...s.commands],
+                100,
+              ),
+            }));
+            addAudit({ actorRole: "parent", action: `COMMAND_${type}`, result: "PENDING", detail: res.fcmSent ? "Worker → FCM পুশ পাঠানো হয়েছে" : "Firestore command doc — চাইল্ড listener নেবে" });
+          })
+          .catch((err: unknown) => {
+            toast.error(`${commandLabel(type)} পাঠানো যায়নি — ${err instanceof RealApiError ? err.message : "নেটওয়ার্ক সমস্যা"}`);
+            addAudit({ actorRole: "parent", action: `COMMAND_${type}`, result: "FAILED", detail: "dispatchCommand ব্যর্থ" });
+          });
         return;
       }
       const cmd: CommandRecord = {
@@ -911,6 +1249,35 @@ export const useFamily = create<Store>((set, get) => {
         updatedAt: Date.now(),
       };
       patchDevice({ policy });
+      // ── REAL mode: Worker setPolicy → devices/{id}/policies/current (version bump)
+      // — চাইল্ডের Firestore listener সাথে সাথে প্রয়োগ করে (icon hide, bedtime,
+      // app block, daily limit সবই realtime)।
+      if (isRealMode()) {
+        const deviceId = get().device.id;
+        if (deviceId && deviceId !== DEVICE_UNPAIRED_ID) {
+          const patchWorker: Record<string, unknown> = {};
+          if (patch.blockedApps !== undefined) patchWorker.blockedApps = patch.blockedApps;
+          if (patch.dailyLimits !== undefined) patchWorker.dailyLimits = patch.dailyLimits;
+          if (patch.settings !== undefined) patchWorker.settings = patch.settings;
+          if (patch.bedtime !== undefined) {
+            patchWorker.bedtime = patch.bedtime.enabled
+              ? {
+                  start: patch.bedtime.start,
+                  end: patch.bedtime.end,
+                  days: patch.bedtime.days.map((d) => (d === 0 ? 7 : d)), // web 0=Sun → ISO 7=Sun
+                  allowedPackages: patch.bedtime.allowedApps,
+                }
+              : null;
+          }
+          realSetPolicy(deviceId, patchWorker)
+            .then((res) => {
+              set((s) => ({ device: { ...s.device, policy: { ...s.device.policy, version: res.version } } }));
+            })
+            .catch((err: unknown) => {
+              toast.error(`পলিসি সার্ভারে সেভ হয়নি — ${err instanceof RealApiError ? err.message : "নেটওয়ার্ক সমস্যা"}`);
+            });
+        }
+      }
       // Official Device Owner icon-hide demo state sync + audit.
       if (patch.settings && patch.settings.hideAppIcon !== undefined && patch.settings.hideAppIcon !== st.device.appIconHidden) {
         patchDevice({ appIconHidden: patch.settings.hideAppIcon });
@@ -924,7 +1291,8 @@ export const useFamily = create<Store>((set, get) => {
         });
       }
       addAudit({ actorRole: "parent", action: "POLICY_CHANGE", result: "EXECUTED", detail: `${detail ?? "পলিসি আপডেট"} (v${policy.version})` });
-      get().dispatchCommand("SYNC_POLICY");
+      // Real mode: policies/current লেখা হয়েছে — চাইল্ড listener-ই যথেষ্ট।
+      if (!isRealMode()) get().dispatchCommand("SYNC_POLICY");
     },
     setAppBlocked: (packageName, blocked) => {
       const st = get();
@@ -1026,6 +1394,33 @@ export const useFamily = create<Store>((set, get) => {
           ? `${label} ব্যাকআপ চালু — অপেক্ষমাণ আইটেম resume হবে`
           : `${label} ব্যাকআপ বন্ধ — সারির আইটেম আপলোডের আগে বাতিল হবে`,
       );
+      // ── REAL mode: Worker backupSetPolicy → devices/{id}/backupPolicy/current —
+      // চাইল্ডের BackupPolicyRepository listener সাথে সাথে পেয়ে backup চালু/বন্ধ করে।
+      if (isRealMode()) {
+        const deviceId = st.device.id;
+        if (deviceId && deviceId !== DEVICE_UNPAIRED_ID) {
+          realSetBackupPolicy(deviceId, { [category]: enabled })
+            .then((res) => {
+              set((s) => ({ backupPolicy: { ...s.backupPolicy, version: res.version } }));
+              addAudit({
+                actorRole: "parent",
+                action: "BACKUP_POLICY_CHANGE",
+                result: "EXECUTED",
+                detail: `${label} ${enabled ? "ON" : "OFF"} — সার্ভার নিশ্চিত (backupPolicy v${res.version})`,
+              });
+            })
+            .catch((err: unknown) => {
+              // revert optimistic toggle
+              set((s) => ({
+                backupPolicy: {
+                  ...s.backupPolicy,
+                  categories: { ...s.backupPolicy.categories, [category]: { enabled: !enabled } },
+                },
+              }));
+              toast.error(`ব্যাকআপ পলিসি সেভ হয়নি — ${err instanceof RealApiError ? err.message : "নেটওয়ার্ক সমস্যা"}`);
+            });
+        }
+      }
     },
     retryBackupItem: (itemId) => {
       const st = get();

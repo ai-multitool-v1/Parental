@@ -104,3 +104,4 @@ parental-control/android/**/build/
 parental-control/android/local.properties
 parental-control/android/.idea/
 *.apk.idsig
+/scripts/

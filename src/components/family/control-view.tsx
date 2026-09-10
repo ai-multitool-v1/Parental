@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useFamily } from "@/lib/family/store";
+import { isRealMode } from "@/lib/family/real";
 import { fmtClock } from "@/lib/family/engine";
 import { SectionCard, SupportBadge, PermBadge, PERMISSION_LABELS, PremiumTag, PremiumUpsellDialog } from "./ui-bits";
 import type { PermissionKey } from "@/lib/family/types";
@@ -41,6 +42,24 @@ export function ControlView() {
         : "unsupported";
 
   const permKeys: PermissionKey[] = ["location", "notifications", "usageAccess", "camera", "microphone", "screenCapture", "accessibility", "deviceAdmin"];
+
+  /** PermissionKey → child REQUEST_PERMISSION payload key (Android PermissionRequestActivity)। */
+  const REQUESTABLE: Partial<Record<PermissionKey, string>> = {
+    location: "location",
+    notifications: "notifications",
+    usageAccess: "appUsageAccess",
+    camera: "camera",
+    microphone: "microphone",
+    accessibility: "accessibilityService",
+    deviceAdmin: "deviceAdmin",
+  };
+  const [requestedPerms, setRequestedPerms] = useState<Set<string>>(new Set());
+  const requestPermission = (k: PermissionKey) => {
+    const p = REQUESTABLE[k];
+    if (!p) return;
+    setRequestedPerms((s) => new Set(s).add(k));
+    dispatchCommand("REQUEST_PERMISSION", undefined, { permission: p });
+  };
 
   return (
     <div className="space-y-5">
@@ -169,7 +188,7 @@ export function ControlView() {
       {/* Permission Dashboard */}
       <SectionCard
         title="পারমিশন ড্যাশবোর্ড (চাইল্ড ডিভাইস)"
-        description="Parent শুধু দেখতে পারে — জোর করে Android-এর user-controlled permission grant করা যায় না"
+        description={isRealMode() ? "Realtime status — লাল পারমিশনে অনুরোধ পাঠান, চাইল্ড Allow দিলে সবুজ হবে" : "Parent শুধু দেখতে পারে — জোর করে Android-এর user-controlled permission grant করা যায় না"}
         icon={<ShieldCheck className="h-4 w-4 text-muted-foreground" />}
         action={<SupportBadge support="supported" />}
       >
@@ -177,12 +196,27 @@ export function ControlView() {
           {permKeys.map((k) => (
             <div key={k} className="flex items-center justify-between rounded-lg border px-3.5 py-3">
               <span className="text-sm">{PERMISSION_LABELS[k]}</span>
-              <PermBadge ok={perms[k]} />
+              <div className="flex items-center gap-2">
+                {isRealMode() && perms[k] !== true && REQUESTABLE[k] && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 px-2.5 text-xs"
+                    disabled={requestedPerms.has(k)}
+                    onClick={() => requestPermission(k)}
+                  >
+                    {requestedPerms.has(k) ? "অনুরোধ পাঠানো হয়েছে" : "অনুরোধ পাঠান"}
+                  </Button>
+                )}
+                <PermBadge ok={perms[k]} />
+              </div>
             </div>
           ))}
         </div>
         <p className="mt-3 text-[11px] text-muted-foreground">
-          ক্যামেরা/মাইক/স্ক্রিন ক্যাপচারের অনুমতি চাইল্ড নিজে Android consent screen-এ মঞ্জুর করবে — অভিভাবক এটি দূর থেকে চালু করতে পারেন না।
+          {isRealMode()
+            ? "লাল পারমিশনের পাশে “অনুরোধ পাঠান” চাপলে চাইল্ডের ফোনে একটি নোটিফিকেশন যাবে — চাইল্ড Allow করলে এখানে ৫ সেকেন্ডের মধ্যে সবুজ হয়ে যাবে (realtime)।"
+            : "ক্যামেরা/মাইক/স্ক্রিন ক্যাপচারের অনুমতি চাইল্ড নিজে Android consent screen-এ মঞ্জুর করবে — অভিভাবক এটি দূর থেকে চালু করতে পারেন না।"}
         </p>
       </SectionCard>
 

@@ -36,6 +36,10 @@ import {
   sendParentNotification,
   type Handler,
 } from "./handlers";
+import {
+  listDevices,
+  setPolicy,
+} from "./handlers";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -67,6 +71,8 @@ const HANDLERS: Record<string, Handler> = {
   requestSession,
   endSession,
   sendParentNotification,
+  listDevices,
+  setPolicy,
   backupSetPolicy,
   backupGetKey,
   backupCreateUploadUrl,

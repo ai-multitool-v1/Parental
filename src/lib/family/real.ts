@@ -304,3 +304,97 @@ export async function realGeneratePairingCode(): Promise<{
     expiresAt: Number(data["expiresAt"] ?? Date.now() + 5 * 60_000),
   };
 }
+
+/* ═══════════════════ realtime parent dashboard (listDevices etc.) ═══════ */
+
+/** One device row from the Worker listDevices endpoint. */
+export interface RealDeviceDoc {
+  deviceId: string;
+  deviceName: string;
+  status: string;
+  banned: boolean;
+  locked: boolean;
+  childUid: string | null;
+  childName: string | null;
+  pairedAtMs: number | null;
+  lastSeenAtMs: number | null;
+  batteryLevel: number | null;
+  isCharging: boolean;
+  networkType: string | null;
+  appVersion: string | null;
+  androidVersion: string | null;
+  policyVersion: number | null;
+  permissions: Record<string, unknown> | null;
+  policy: Record<string, unknown> | null;
+  backupPolicy: Record<string, unknown> | null;
+}
+
+export interface RealCommandDoc {
+  commandId: string;
+  deviceId: string;
+  type: string;
+  status: string;
+  result: Record<string, unknown> | null;
+  completedAtMs: number | null;
+}
+
+/** Live snapshot of every device linked to the signed-in parent. */
+export async function realListDevices(
+  pendingCommands: { deviceId: string; commandId: string }[] = []
+): Promise<{ devices: RealDeviceDoc[]; commands: RealCommandDoc[] }> {
+  const data = await callSecure("listDevices", { pendingCommands });
+  return {
+    devices: (data["devices"] ?? []) as unknown as RealDeviceDoc[],
+    commands: (data["commands"] ?? []) as unknown as RealCommandDoc[],
+  };
+}
+
+/** Dispatch a whitelisted command to a paired device. */
+export async function realDispatchCommand(
+  deviceId: string,
+  type: string,
+  payload: Record<string, unknown> = {}
+): Promise<{ commandId: string; fcmSent: boolean; expiresAtMs: number }> {
+  const data = await callSecure("dispatchCommand", { deviceId, type, payload });
+  return {
+    commandId: String(data["commandId"] ?? ""),
+    fcmSent: data["fcmSent"] === true,
+    expiresAtMs: Number(data["expiresAt"] ?? 0),
+  };
+}
+
+/** Request a consent-gated live session (creates session doc + command). */
+export async function realRequestSession(
+  deviceId: string,
+  type: "screen" | "camera" | "audio",
+  note?: string
+): Promise<{ sessionId: string; commandId: string; expiresAtMs: number }> {
+  const data = await callSecure("requestSession", {
+    deviceId,
+    type,
+    ...(note ? { note } : {}),
+  });
+  return {
+    sessionId: String(data["sessionId"] ?? ""),
+    commandId: String(data["commandId"] ?? ""),
+    expiresAtMs: Number(data["expiresAt"] ?? 0),
+  };
+}
+
+/** Write a policy patch (child-native shape) — child applies it in realtime. */
+export async function realSetPolicy(
+  deviceId: string,
+  patch: Record<string, unknown>
+): Promise<{ version: number }> {
+  const data = await callSecure("setPolicy", { deviceId, patch });
+  return { version: Number(data["version"] ?? 0) };
+}
+
+/** Toggle a cloud-backup category (premium-gated server-side). */
+export async function realSetBackupPolicy(
+  deviceId: string,
+  categories: Record<string, boolean>
+): Promise<{ version: number }> {
+  const data = await callSecure("backupSetPolicy", { deviceId, categories });
+  return { version: Number(data["version"] ?? 0) };
+}

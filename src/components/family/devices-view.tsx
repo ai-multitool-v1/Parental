@@ -150,34 +150,37 @@ export function DevicesView({ onNavigate }: { onNavigate: (v: ViewKey) => void }
           </Alert>
         )}
 
-        {/* চাইল্ড অ্যাপে কোড প্রবেশের ধাপ — স্যান্ডবক্সে এখানেই লিংক সম্পন্ন করা যায় */}
-        <div className="mt-4 rounded-lg border p-3.5">
-          <p className="text-sm font-medium flex items-center gap-1.5">
-            <Link2 className="h-4 w-4 text-emerald-600" /> চাইল্ড অ্যাপে কোড প্রবেশ করান
-          </p>
-          <p className="text-xs text-muted-foreground mt-1 mb-2.5">
-            চাইল্ডের ফোনের অ্যাপে কোডটি দিলে লিংক সম্পন্ন হবে।
-          </p>
-          <div className="flex gap-2">
-            <Input
-              value={code}
-              onChange={(e) => setCode(e.target.value.toUpperCase())}
-              placeholder="যেমন: A7KD2M9X"
-              className="font-mono tracking-widest uppercase max-w-56"
-              maxLength={8}
-              aria-label="পেয়ারিং কোড"
-            />
-            <Button
-              onClick={() => {
-                if (pairDevice(code)) setCode("");
-              }}
-              disabled={!code.trim() || !pairingActive}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white"
-            >
-              লিংক করুন
-            </Button>
+        {/* চাইল্ড অ্যাপে কোড প্রবেশের ধাপ — শুধু sandbox সিমুলেশন (real mode-এ
+            পেয়ারিং হয় চাইল্ড অ্যাপ থেকে; ড্যাশবোর্ডে ঢুকলেই realtime toast আসবে) */}
+        {sandboxMode && (
+          <div className="mt-4 rounded-lg border p-3.5">
+            <p className="text-sm font-medium flex items-center gap-1.5">
+              <Link2 className="h-4 w-4 text-emerald-600" /> চাইল্ড অ্যাপে কোড প্রবেশ করান
+            </p>
+            <p className="text-xs text-muted-foreground mt-1 mb-2.5">
+              চাইল্ডের ফোনের অ্যাপে কোডটি দিলে লিংক সম্পন্ন হবে।
+            </p>
+            <div className="flex gap-2">
+              <Input
+                value={code}
+                onChange={(e) => setCode(e.target.value.toUpperCase())}
+                placeholder="যেমন: A7KD2M9X"
+                className="font-mono tracking-widest uppercase max-w-56"
+                maxLength={8}
+                aria-label="পেয়ারিং কোড"
+              />
+              <Button
+                onClick={() => {
+                  if (pairDevice(code)) setCode("");
+                }}
+                disabled={!code.trim() || !pairingActive}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              >
+                লিংক করুন
+              </Button>
+            </div>
           </div>
-        </div>
+        )}
       </SectionCard>
 
       {sandboxMode && (

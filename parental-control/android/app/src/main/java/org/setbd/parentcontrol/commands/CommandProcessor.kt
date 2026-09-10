@@ -37,12 +37,13 @@ object CommandTypes {
     const val REQUEST_AUDIO_SESSION = "REQUEST_AUDIO_SESSION"
     const val STOP_AUDIO_SESSION = "STOP_AUDIO_SESSION"
     const val TRIGGER_SAFETY_CHECK = "TRIGGER_SAFETY_CHECK"
+    const val REQUEST_PERMISSION = "REQUEST_PERMISSION"
 
     val WHITELIST: Set<String> = setOf(
         SYNC_POLICY, REQUEST_STATUS, REQUEST_LOCATION, LOCK_DEVICE, SEND_NOTIFICATION,
         SYNC_APPS, SYNC_USAGE, REQUEST_SCREEN_SESSION, STOP_SCREEN_SESSION,
         REQUEST_CAMERA_SESSION, STOP_CAMERA_SESSION, REQUEST_AUDIO_SESSION,
-        STOP_AUDIO_SESSION, TRIGGER_SAFETY_CHECK,
+        STOP_AUDIO_SESSION, TRIGGER_SAFETY_CHECK, REQUEST_PERMISSION,
     )
 }
 
@@ -94,6 +95,34 @@ class CommandProcessor(private val context: Context) {
      */
     fun enqueue(commandId: String, data: Map<String, Any?>) {
         scope.launch { processIncoming(commandId, data) }
+    }
+
+    /**
+     * FCM fast path: the push data carries only {kind, commandId, type,
+     * payload(JSON), expiresAtMs} — NOT the full command map the security
+     * gates need. So we fetch the authoritative Firestore command doc and
+     * run it through the same pipeline (all gates still enforced).
+     */
+    fun wakeFromFcm(commandId: String) {
+        scope.launch {
+            val status = runCatching {
+                val doc = firestore.collection("devices")
+                    .document(ServiceLocator.deviceId)
+                    .collection("commands")
+                    .document(commandId)
+                    .get()
+                    .await()
+                if (!doc.exists()) null
+                else processIncoming(doc.id, doc.data ?: emptyMap())
+            }.getOrNull()
+            if (status == null) {
+                ServiceLocator.auditLogger.log(
+                    actorUid = ServiceLocator.auth.childUid.value,
+                    action = AuditLogger.ACTION_COMMAND_REJECTED,
+                    result = "FCM wake: command $commandId not found/unreachable",
+                )
+            }
+        }
     }
 
     suspend fun processIncoming(commandId: String, data: Map<String, Any?>): CommandResultStatus {
@@ -260,6 +289,13 @@ class CommandProcessor(private val context: Context) {
         CommandTypes.TRIGGER_SAFETY_CHECK -> {
             ServiceLocator.emergencyManager.showSafetyCheckPrompt(commandId, issuedBy)
             EXECUTED("safety check shown to child")
+        }
+
+        CommandTypes.REQUEST_PERMISSION -> {
+            val permission = (payload["permission"] as? String).orEmpty()
+            val shown = org.setbd.parentcontrol.security.PermissionRequestActivity.show(context, permission)
+            if (shown) EXECUTED("permission request notification shown: $permission")
+            else UNSUPPORTED("notifications disabled — child cannot be prompted; ask on the device")
         }
 
         else -> REJECTED("unknown command type") // unreachable: whitelist above

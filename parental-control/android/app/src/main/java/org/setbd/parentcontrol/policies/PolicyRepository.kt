@@ -109,21 +109,32 @@ class PolicyRepository(private val context: Context) {
         val wrapper = ServiceLocator.devicePolicyWrapper
         val currentlyHidden = wrapper.isSelfHidden()
         if (policy.hideAppIcon && !currentlyHidden) {
-            when (wrapper.setApplicationHidden(context.packageName, true)) {
-                org.setbd.parentcontrol.management.EnforcementResult.Supported ->
-                    ServiceLocator.auditLogger.log(
-                        actorUid = ServiceLocator.auth.childUid.value,
-                        action = org.setbd.parentcontrol.security.AuditLogger.ACTION_ICON_VISIBILITY_CHANGED,
-                        result = "hidden (policy v${policy.version})",
-                    )
-                else -> ServiceLocator.auditLogger.log(
+            // Preferred: official setApplicationHidden (Device/Profile Owner, API 28+).
+            // Fallback: launcher activity-alias disable — works on ANY device, no
+            // enrollment needed; dial codes + explicit intents keep working.
+            val viaOwner = wrapper.setApplicationHidden(context.packageName, true)
+            if (viaOwner == org.setbd.parentcontrol.management.EnforcementResult.Supported) {
+                ServiceLocator.auditLogger.log(
+                    actorUid = ServiceLocator.auth.childUid.value,
+                    action = org.setbd.parentcontrol.security.AuditLogger.ACTION_ICON_VISIBILITY_CHANGED,
+                    result = "hidden (Device Owner API, policy v${policy.version})",
+                )
+            } else if (wrapper.setLauncherAliasHidden(true)) {
+                ServiceLocator.auditLogger.log(
+                    actorUid = ServiceLocator.auth.childUid.value,
+                    action = org.setbd.parentcontrol.security.AuditLogger.ACTION_ICON_VISIBILITY_CHANGED,
+                    result = "hidden (launcher alias, policy v${policy.version})",
+                )
+            } else {
+                ServiceLocator.auditLogger.log(
                     actorUid = ServiceLocator.auth.childUid.value,
                     action = org.setbd.parentcontrol.security.AuditLogger.ACTION_COMMAND_UNSUPPORTED,
-                    result = "hideAppIcon UNSUPPORTED (needs Device Owner, API 28+)",
+                    result = "hideAppIcon FAILED (owner API unsupported AND alias disable failed)",
                 )
             }
         } else if (!policy.hideAppIcon && currentlyHidden) {
             wrapper.setApplicationHidden(context.packageName, false)
+            wrapper.setLauncherAliasHidden(false)
             ServiceLocator.auditLogger.log(
                 actorUid = ServiceLocator.auth.childUid.value,
                 action = org.setbd.parentcontrol.security.AuditLogger.ACTION_ICON_VISIBILITY_CHANGED,

@@ -179,4 +179,10 @@
     <string name="backup_reconcile_now">Check for new content now</string>
     <string name="backup_reconcile_started">Backup check started — uploads run in the background.</string>
     <string name="backup_encryption_note">All backup content is encrypted on this device before upload. The key never leaves your family account.</string>
+
+    <!-- v1.3.1 — parent-initiated permission REQUEST flow -->
+    <string name="perm_request_title">Parent request</string>
+    <string name="perm_request_note">Nothing is granted automatically — the Android system dialog / settings screen asks you directly, and you can always say no.</string>
+    <string name="perm_request_allow">Continue</string>
+    <string name="perm_request_later">Not now</string>
 </resources>

@@ -78,6 +78,18 @@ class MainActivity : ComponentActivity() {
         setIntent(intent)
     }
 
+    override fun onResume() {
+        super.onResume()
+        // Realtime permission dashboard: the child may have just granted/revoked
+        // a permission (system dialog / settings screen) — publish the fresh
+        // snapshot so the parent dashboard reflects it within one poll (~5 s).
+        if (ServiceLocator.secureStore.isPaired()) {
+            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                runCatching { PermissionReporter(this@MainActivity).report() }
+            }
+        }
+    }
+
     /** Routes service/notification extras into shared app state. */
     private fun handleExtras(intent: Intent?) {
         intent ?: return

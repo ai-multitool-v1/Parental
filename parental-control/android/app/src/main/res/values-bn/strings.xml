@@ -169,4 +169,10 @@
     <string name="backup_reconcile_now">এখনই নতুন কনটেন্ট দেখুন</string>
     <string name="backup_reconcile_started">ব্যাকআপ চেক শুরু হয়েছে — আপলোড ব্যাকগ্রাউন্ডে চলবে।</string>
     <string name="backup_encryption_note">সব ব্যাকআপ কনটেন্ট আপলোডের আগে এই ডিভাইসেই এনক্রিপ্ট হয়। কী কখনো আপনার পরিবারের অ্যাকাউন্টের বাইরে যায় না।</string>
+
+    <!-- v1.3.1 — parent-initiated permission REQUEST flow -->
+    <string name="perm_request_title">অভিভাবকের অনুরোধ</string>
+    <string name="perm_request_note">কিছুই স্বয়ংক্রিয়ভাবে গ্রহণ করা হবে না — Android-এর নিজস্ব ডায়ালগ/সেটিংস স্ক্রিন আপনাকে সরাসরি জিজ্ঞেস করবে, আপনি চাইলে "না" বলতে পারবেন।</string>
+    <string name="perm_request_allow">এগিয়ে যান</string>
+    <string name="perm_request_later">এখন নয়</string>
 </resources>

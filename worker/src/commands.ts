@@ -25,6 +25,7 @@ export const COMMAND_WHITELIST = [
   "SYNC_USAGE",
   "SEND_NOTIFICATION",
   "TRIGGER_SAFETY_CHECK",
+  "REQUEST_PERMISSION",
   // premium (v1.4.0 plan gate)
   "LOCK_DEVICE",
   // consent-gated live sessions (request via requestSession, stop via here)
@@ -37,6 +38,22 @@ export const COMMAND_WHITELIST = [
 ] as const;
 
 export type CommandType = (typeof COMMAND_WHITELIST)[number];
+
+/**
+ * Permission keys a parent may ASK the child to grant (REQUEST_PERMISSION).
+ * The child ALWAYS shows a visible prompt — this is a request, never a grant.
+ * Must mirror Android PermissionRequestActivity.handle().
+ */
+export const PERMISSION_REQUEST_TYPES = [
+  "location",
+  "notifications",
+  "camera",
+  "microphone",
+  "appUsageAccess",
+  "accessibilityService",
+  "deviceAdmin",
+  "batteryOptimization",
+] as const;
 
 function invalidArgument(message: string): ApiError {
   return new ApiError("invalid-argument", message);
@@ -112,6 +129,18 @@ export function validateCommandPayload(
         throw invalidArgument(`Command "${type}" takes no payload.`);
       }
       return {};
+    case "REQUEST_PERMISSION": {
+      const permission = p["permission"];
+      if (
+        typeof permission !== "string" ||
+        !(PERMISSION_REQUEST_TYPES as readonly string[]).includes(permission)
+      ) {
+        throw invalidArgument(
+          `Field "payload.permission" must be one of: ${PERMISSION_REQUEST_TYPES.join(", ")}.`
+        );
+      }
+      return { permission };
+    }
     default: {
       // Exhaustiveness guard: a whitelist addition without a payload policy
       // must fail closed at compile time.

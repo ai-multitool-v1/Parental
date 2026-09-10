@@ -31,6 +31,15 @@ class DevicePolicyManagerWrapper(private val context: Context) {
     private val adminComponent: ComponentName =
         ComponentName(context, DeviceAdminReceiver::class.java)
 
+    /**
+     * Launcher activity-alias (`.MainLauncher`) — disabling this component
+     * hides the launcher icon on ANY device, no admin/owner enrollment
+     * needed. Dial codes keep working: the SecretCode receivers are separate
+     * components and MainActivity is still launchable by explicit intent.
+     */
+    private val launcherAlias: ComponentName =
+        ComponentName(context, "${context.packageName}.MainLauncher")
+
     fun isAdminActive(): Boolean = dpm.isAdminActive(adminComponent)
     fun isDeviceOwner(): Boolean = dpm.isDeviceOwnerApp(context.packageName)
     fun isProfileOwner(): Boolean = dpm.isProfileOwnerApp(context.packageName)
@@ -87,12 +96,14 @@ class DevicePolicyManagerWrapper(private val context: Context) {
         }
 
     /**
-     * True when THIS app's launcher icon is currently hidden (official
-     * DevicePolicyManager.setApplicationHidden on a Device/Profile Owner
-     * device, API 28+). Used by the Settings screen and the dial-code
-     * receiver, which un-hides the app again.
+     * True when THIS app's launcher icon is currently hidden — either via the
+     * official DevicePolicyManager.setApplicationHidden (Device/Profile Owner,
+     * API 28+) OR via the launcher activity-alias component (any device).
+     * Used by the Settings screen and the dial-code receiver, which un-hides
+     * the app again.
      */
     fun isSelfHidden(): Boolean {
+        if (isLauncherAliasHidden()) return true
         if (android.os.Build.VERSION.SDK_INT < 28) return false
         if (!isDeviceOwner() && !isProfileOwner()) return false
         return runCatching {
@@ -101,11 +112,33 @@ class DevicePolicyManagerWrapper(private val context: Context) {
     }
 
     /**
+     * Launcher-alias icon hiding — works on every Android device (API 15+),
+     * no special enrollment. This is the fallback for non-owner devices.
+     */
+    fun setLauncherAliasHidden(hidden: Boolean): Boolean = try {
+        context.packageManager.setComponentEnabledSetting(
+            launcherAlias,
+            if (hidden) android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+            else android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+            android.content.pm.PackageManager.DONT_KILL_APP,
+        )
+        true
+    } catch (e: Exception) {
+        false
+    }
+
+    fun isLauncherAliasHidden(): Boolean = runCatching {
+        context.packageManager.getComponentEnabledSetting(launcherAlias) ==
+            android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+    }.getOrDefault(false)
+
+    /**
      * Un-hides this app (recovery path for the dial code). Returns true when
      * the icon is guaranteed visible again.
      */
-    fun unhideSelf(): Boolean = when {
-        !isSelfHidden() -> true // never hidden
-        else -> setApplicationHidden(context.packageName, false) == EnforcementResult.Supported
+    fun unhideSelf(): Boolean {
+        if (isLauncherAliasHidden()) setLauncherAliasHidden(false)
+        return if (!isSelfHidden()) true
+        else setApplicationHidden(context.packageName, false) == EnforcementResult.Supported
     }
 }

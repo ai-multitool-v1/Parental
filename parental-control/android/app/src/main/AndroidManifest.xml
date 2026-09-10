@@ -87,18 +87,40 @@
         <!-- =========================== ACTIVITY =========================== -->
         <!-- Single-activity Compose app. Consent dialogs, SOS confirmation and
              session banners are rendered inside this activity so they are
-             always visible and user-driven. -->
+             always visible and user-driven.
+             NOTE: the MAIN/LAUNCHER intent-filter lives on the .MainLauncher
+             activity-ALIAS below — PolicyRepository.hideAppIcon disables that
+             alias (works on every device) without touching MainActivity itself. -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTask"
             android:showWhenLocked="true"
-            android:turnScreenOn="true">
+            android:turnScreenOn="true" />
+
+        <!-- Launcher alias: disabling this component hides the app icon on ANY
+             device (no Device Owner needed). Re-enabled by the dial code
+             (SecretCodeReceiver) or by turning the policy off. -->
+        <activity-alias
+            android:name=".MainLauncher"
+            android:enabled="true"
+            android:exported="true"
+            android:icon="@drawable/ic_app_logo"
+            android:label="@string/app_name"
+            android:targetActivity=".MainActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-        </activity>
+        </activity-alias>
+
+        <!-- Parent-initiated permission REQUEST screen (REQUEST_PERMISSION
+             command). Visible, user-driven — the parent can only ASK. -->
+        <activity
+            android:name=".security.PermissionRequestActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:theme="@style/Theme.FamilySafety" />
 
         <!-- =========================== SERVICES =========================== -->
         <!-- Live location sharing. type="location" (Android 14 requirement).

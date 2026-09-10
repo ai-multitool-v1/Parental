@@ -1641,6 +1641,261 @@ export const profile: Handler = async (_env, caller, _data) => {
   };
 };
 
+/* ═════════════════ realtime parent dashboard (listDevices / setPolicy) ═══ */
+
+function tsToMs(v: unknown): number | null {
+  if (v && typeof v === "object" && typeof (v as { toMillis?: unknown }).toMillis === "function") {
+    return (v as { toMillis: () => number }).toMillis();
+  }
+  return null;
+}
+
+/**
+ * listDevices — realtime snapshot for the parent dashboard (polled every
+ * ~5s while the tab is visible). Returns ALL devices linked to this parent
+ * (devices/{id}.ownerParentUid == uid) with their live sub-documents:
+ * status/current (battery/network), permissions/current, policies/current,
+ * backupPolicy/current — plus the terminal status of any commands the
+ * dashboard is still waiting on (pendingCommands[{deviceId, commandId}]).
+ * Read-only: no rate-limit pressure, single round-trip per poll.
+ */
+export const listDevices: Handler = async (_env, caller, data) => {
+  assertAppCheck(caller);
+  if (caller.kind === "device") {
+    throw new ApiError("permission-denied", "Device identities cannot call parent operations.");
+  }
+  const uid = caller.uid;
+
+  // Bounded pending-command lookups (dashboard re-checks these each poll).
+  const pendingReq = Array.isArray(data["pendingCommands"]) ? data["pendingCommands"] : [];
+  const pending = pendingReq
+    .filter(
+      (x): x is { deviceId: string; commandId: string } =>
+        !!x && typeof x === "object" &&
+        typeof (x as Record<string, unknown>)["deviceId"] === "string" &&
+        typeof (x as Record<string, unknown>)["commandId"] === "string"
+    )
+    .map((x) => ({
+      deviceId: x.deviceId.slice(0, 64),
+      commandId: (x.commandId as string).slice(0, 64),
+    }))
+    .slice(0, 20);
+
+  const snap = await db()
+    .collection("devices")
+    .where("ownerParentUid", "==", uid)
+    .limit(10)
+    .get();
+
+  const devices = await Promise.all(
+    snap.docs.map(async (d) => {
+      const v = d.data() as Record<string, unknown>;
+      const childUid = typeof v["childUid"] === "string" ? (v["childUid"] as string) : null;
+      const [statusSnap, permSnap, policySnap, backupSnap, childSnap] = await Promise.all([
+        d.ref.collection("status").doc("current").get(),
+        d.ref.collection("permissions").doc("current").get(),
+        d.ref.collection("policies").doc("current").get(),
+        d.ref.collection("backupPolicy").doc("current").get(),
+        childUid
+          ? db().doc(`children/${childUid}`).get().catch(() => null)
+          : Promise.resolve(null),
+      ]);
+      const status = statusSnap.exists ? (statusSnap.data() as Record<string, unknown>) : {};
+      return {
+        deviceId: d.id,
+        deviceName: (v["deviceName"] as string) ?? "Child device",
+        status: (v["status"] as string) ?? "UNKNOWN",
+        banned: v["banned"] === true,
+        locked: v["locked"] === true,
+        childUid,
+        childName:
+          childSnap && childSnap.exists
+            ? ((childSnap.get("displayName") as string | null) ?? null)
+            : null,
+        pairedAtMs: tsToMs(v["pairedAt"]),
+        lastSeenAtMs: tsToMs(v["lastSeenAt"]) ?? tsToMs(status["updatedAt"]),
+        batteryLevel: typeof status["batteryPercent"] === "number" ? (status["batteryPercent"] as number) : null,
+        isCharging: status["charging"] === true,
+        networkType: (status["networkType"] as string) ?? null,
+        appVersion: (status["appVersion"] as string) ?? null,
+        androidVersion: (status["androidVersion"] as string) ?? null,
+        policyVersion: (v["policyVersion"] as number | null) ?? null,
+        permissions: permSnap.exists ? (permSnap.data() as Record<string, unknown>) : null,
+        policy: policySnap.exists ? (policySnap.data() as Record<string, unknown>) : null,
+        backupPolicy: backupSnap.exists ? (backupSnap.data() as Record<string, unknown>) : null,
+      };
+    })
+  );
+
+  const commands = await Promise.all(
+    pending.map(async ({ deviceId, commandId }) => {
+      // Parent-of-device gate: the pending id must belong to a paired device.
+      const link = await db().doc(`devices/${deviceId}/parents/${uid}`).get();
+      if (!link.exists) return null;
+      const doc = await db().doc(`devices/${deviceId}/commands/${commandId}`).get();
+      if (!doc.exists) return null;
+      const v = doc.data() as Record<string, unknown>;
+      return {
+        commandId,
+        deviceId,
+        type: (v["type"] as string) ?? "UNKNOWN",
+        status: (v["status"] as string) ?? "PENDING",
+        result: (v["result"] as Record<string, unknown> | null) ?? null,
+        completedAtMs: tsToMs(v["completedAt"]),
+      };
+    })
+  );
+
+  return {
+    devices,
+    commands: commands.filter((c): c is NonNullable<typeof c> => c !== null),
+  };
+};
+
+const PKG_RE = /^[A-Za-z0-9_][A-Za-z0-9_.]{0,119}$/;
+const HHMM_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/**
+ * setPolicy — parent writes devices/{deviceId}/policies/current (version-bumped,
+ * section-merge). The child's Firestore listener applies it in realtime:
+ * appBlockList/dailyLimits/bedtime (app guard + bedtime scheduler) and
+ * settings.hideAppIcon / settings.protectSettings (DevicePolicyManager /
+ * launcher-alias fallback). Bedtime arrives in the CHILD-NATIVE shape:
+ * {start:"HH:mm", end:"HH:mm", days:[ISO 1=Mon..7=Sun], allowedPackages[]}.
+ */
+export const setPolicy: Handler = async (_env, caller, data) => {
+  const deviceId = requireDeviceId(data["deviceId"]);
+  const { uid } = (await requireParentGate(deviceId, caller)) as { uid: string };
+
+  // Ban gates (defense in depth, mirrors dispatchCommand).
+  const [deviceSnap, parentSnap] = await Promise.all([
+    db().doc(`devices/${deviceId}`).get(),
+    db().doc(`users/${uid}`).get(),
+  ]);
+  if (deviceSnap.get("banned") === true || parentSnap.get("banned") === true) {
+    throw new ApiError("permission-denied", "This account or device is suspended.");
+  }
+
+  const patch = (typeof data["patch"] === "object" && data["patch"] !== null ? data["patch"] : {}) as Record<string, unknown>;
+
+  // ---- validate allowed sections ------------------------------------------
+  let blockedApps: string[] | null = null;
+  if (patch["blockedApps"] !== undefined) {
+    if (!Array.isArray(patch["blockedApps"]) || patch["blockedApps"].length > 300) {
+      throw new ApiError("invalid-argument", 'Field "patch.blockedApps" must be an array (≤300).');
+    }
+    blockedApps = (patch["blockedApps"] as unknown[]).map((p) => String(p));
+    if (blockedApps.some((p) => !PKG_RE.test(p))) {
+      throw new ApiError("invalid-argument", "blockedApps contains an invalid package name.");
+    }
+  }
+
+  let dailyLimits: Record<string, number> | null = null;
+  if (patch["dailyLimits"] !== undefined) {
+    const raw = patch["dailyLimits"];
+    if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+      throw new ApiError("invalid-argument", 'Field "patch.dailyLimits" must be an object.');
+    }
+    dailyLimits = {};
+    const entries = Object.entries(raw as Record<string, unknown>);
+    if (entries.length > 300) throw new ApiError("invalid-argument", "dailyLimits has too many entries.");
+    for (const [k, v] of entries) {
+      if (!PKG_RE.test(k)) throw new ApiError("invalid-argument", `Invalid package "${k.slice(0, 40)}".`);
+      const m = Number(v);
+      if (!Number.isFinite(m) || m < 0 || m > 1440) {
+        throw new ApiError("invalid-argument", `Daily limit for "${k}" must be 0..1440 minutes.`);
+      }
+      dailyLimits[k] = Math.round(m);
+    }
+  }
+
+  let settings: Record<string, boolean> | null = null;
+  if (patch["settings"] !== undefined) {
+    const raw = patch["settings"] as Record<string, unknown>;
+    if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+      throw new ApiError("invalid-argument", 'Field "patch.settings" must be an object.');
+    }
+    settings = {};
+    // Device-management settings are premium-gated (v1.4.0, mirrors web UI).
+    if (parentSnap.get("plan") !== "premium") {
+      throw new ApiError("permission-denied", "Device management requires a premium plan.");
+    }
+    for (const key of ["hideAppIcon", "protectSettings"] as const) {
+      if (raw[key] !== undefined) {
+        if (typeof raw[key] !== "boolean") {
+          throw new ApiError("invalid-argument", `settings.${key} must be boolean.`);
+        }
+        settings[key] = raw[key] as boolean;
+      }
+    }
+  }
+
+  let bedtime: Record<string, unknown> | null | undefined;
+  if (patch["bedtime"] !== undefined) {
+    const raw = patch["bedtime"];
+    if (raw === null) {
+      bedtime = null; // explicit clear
+    } else if (typeof raw === "object" && !Array.isArray(raw)) {
+      const b = raw as Record<string, unknown>;
+      const start = typeof b["start"] === "string" ? b["start"] : "";
+      const end = typeof b["end"] === "string" ? b["end"] : "";
+      if (!HHMM_RE.test(start) || !HHMM_RE.test(end)) {
+        throw new ApiError("invalid-argument", "bedtime.start/end must be HH:mm.");
+      }
+      const days = Array.isArray(b["days"])
+        ? (b["days"] as unknown[]).map((x) => Number(x)).filter((x) => Number.isInteger(x) && x >= 1 && x <= 7)
+        : [1, 2, 3, 4, 5, 6, 7];
+      const allowedPackages = Array.isArray(b["allowedPackages"])
+        ? (b["allowedPackages"] as unknown[]).map((x) => String(x)).filter((x) => PKG_RE.test(x)).slice(0, 100)
+        : [];
+      bedtime = { start, end, days, allowedPackages };
+    } else {
+      throw new ApiError("invalid-argument", 'Field "patch.bedtime" must be an object or null.');
+    }
+  }
+
+  const ref = db().doc(`devices/${deviceId}/policies/current`);
+  const version = await db().runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const prev = (snap.exists ? snap.data() : null) as Record<string, unknown> | null;
+    const nextVersion = (typeof prev?.["version"] === "number" ? (prev!["version"] as number) : 0) + 1;
+    const prevSettings = (prev?.["settings"] ?? {}) as Record<string, unknown>;
+    const next: Record<string, unknown> = {
+      version: nextVersion,
+      appBlockList: blockedApps ?? prev?.["appBlockList"] ?? [],
+      dailyLimits: dailyLimits ?? prev?.["dailyLimits"] ?? {},
+      settings: {
+        hideAppIcon: settings?.["hideAppIcon"] ?? prevSettings["hideAppIcon"] === true,
+        protectSettings: settings?.["protectSettings"] ?? prevSettings["protectSettings"] === true,
+      },
+      updatedAt: FieldValue.serverTimestamp(),
+      updatedBy: uid,
+    };
+    if (bedtime !== undefined) {
+      if (bedtime === null) next["bedtime"] = null;
+      else next["bedtime"] = bedtime;
+    } else if (prev?.["bedtime"] !== undefined) {
+      next["bedtime"] = prev["bedtime"];
+    }
+    if (prev?.["emergencyContacts"] !== undefined) {
+      next["emergencyContacts"] = prev["emergencyContacts"];
+    }
+    tx.set(ref, next, { merge: false });
+    return nextVersion;
+  });
+
+  await writeAudit({
+    functionName: "setPolicy",
+    actorUid: uid,
+    actorType: "PARENT",
+    deviceId,
+    action: "POLICY_CHANGE",
+    result: "ALLOWED",
+    details: { sections: Object.keys(patch), version },
+  });
+  return { ok: true, version };
+};
+
 /* ════════════════════════════════ sweep (cron) ═══════════════════════════ */
 
 /**
