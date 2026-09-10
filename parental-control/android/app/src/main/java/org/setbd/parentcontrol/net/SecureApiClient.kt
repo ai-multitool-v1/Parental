@@ -45,9 +45,38 @@ object SecureApi {
      * Calls a privileged endpoint. Returns the `data` map on success.
      * Throws [SecureApiException] for server-defined errors, [IOException]
      * for transport failures (offline, DNS, timeout).
+     *
+     * SELF-HEALING: if the first attempt dies with 401 `unauthenticated` and
+     * the request used a cached ID token, the call is retried ONCE with a
+     * force-refreshed token. This kills the whole class of "sign in expired"
+     * failures caused by a stale cached token (app sitting on a screen for
+     * >1 h, or a device clock running behind so the SDK believes an expired
+     * token is still fresh).
+     *
+     * @param forceRefreshToken always mint a fresh ID token first (use for
+     *   rare, security-sensitive calls like confirmPairing).
      */
-    suspend fun call(name: String, data: Map<String, Any?>): Map<String, Any?> =
-        withContext(Dispatchers.IO) {
+    suspend fun call(
+        name: String,
+        data: Map<String, Any?>,
+        forceRefreshToken: Boolean = false,
+    ): Map<String, Any?> = withContext(Dispatchers.IO) {
+        try {
+            callOnce(name, data, forceRefreshToken)
+        } catch (e: SecureApiException) {
+            if (e.code == "unauthenticated" && !forceRefreshToken) {
+                callOnce(name, data, forceRefreshToken = true)
+            } else {
+                throw e
+            }
+        }
+    }
+
+    private suspend fun callOnce(
+        name: String,
+        data: Map<String, Any?>,
+        forceRefreshToken: Boolean,
+    ): Map<String, Any?> = withContext(Dispatchers.IO) {
             val base = BuildConfig.SECURE_API_BASE.trim().trimEnd('/')
             if (base.isBlank()) {
                 throw SecureApiException(
@@ -61,9 +90,11 @@ object SecureApi {
                     "unauthenticated",
                     "Not signed in yet."
                 )
-            // false = cached token is fine (claims refresh is forced by the
-            // pairing flow); the server verifies + checks revocation anyway.
-            val idToken = user.getIdToken(false).await().token
+            // forceRefreshToken=true mints a fresh token even if the cached
+            // one looks valid (defeats stale-token + device-clock skew);
+            // otherwise the cached token is fine — the server verifies it
+            // (and checks revocation) anyway, and the 401 retry above heals.
+            val idToken = user.getIdToken(forceRefreshToken).await().token
                 ?: throw SecureApiException("unauthenticated", "No ID token.")
 
             val appCheckToken = runCatching {

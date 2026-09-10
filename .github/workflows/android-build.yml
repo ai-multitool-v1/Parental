@@ -29,8 +29,10 @@ concurrency:
 
 jobs:
   build-apk:
-    name: Assemble Debug APK
+    name: Assemble Debug APK + Publish to Releases
     runs-on: ubuntu-latest
+    permissions:
+      contents: write   # needed to create the GitHub Release + upload the APK
 
     steps:
       - name: Checkout repository
@@ -93,3 +95,47 @@ jobs:
           path: parental-control/android/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 30
+
+      # ── Publish the APK to the GitHub Releases tab ──────────────────────
+      # Every successful build creates a release tagged child-v1.0.<run#> and
+      # marked Latest. The asset keeps a STABLE name, so this URL always
+      # serves the newest APK (perfect for sending to parents):
+      #   https://github.com/<owner>/<repo>/releases/latest/download/ParentalControl-child-debug.apk
+      - name: Publish APK to GitHub Releases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APK_PATH: ${{ env.APK_PATH }}
+          RUN_NUM: ${{ github.run_number }}
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+        run: |
+          set -euo pipefail
+          TAG="child-v1.0.${RUN_NUM}"
+          ASSET="ParentalControl-child-debug.apk"
+          cp "$APK_PATH" "$ASSET"
+          SHA=$(sha256sum "$ASSET" | cut -d' ' -f1)
+          SIZE=$(du -h "$ASSET" | cut -f1)
+          NOTES=$(cat <<EOF
+          ## Parental Control — Child App (debug APK)
+
+          **Install (Eng):** download the APK below → open it → allow "Install unknown apps" for your browser → Install. Requires Android 8.0+.
+
+          **ইনস্টল (বাংলা):** নিচের APK ফাইলটি ডাউনলোড করুন → খুলুন → ব্রাউজারকে "অজানা অ্যাপ ইনস্টল" অনুমতি দিন → ইনস্টল করুন।
+
+          - File: \`$ASSET\` ($SIZE)
+          - SHA-256: \`$SHA\`
+          - Always-newest direct link: ${REPO_URL}/releases/latest/download/${ASSET}
+          - Backend: built-in (SECURE_API_BASE baked at build time)
+
+          After install: open the app on the child device, enter the 8-character code from the parent dashboard, done.
+          EOF
+          )
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$ASSET" --clobber
+            gh release edit "$TAG" --latest --notes "$NOTES"
+          else
+            gh release create "$TAG" "$ASSET" \
+              --title "Child App v1.0.$RUN_NUM (debug)" \
+              --notes "$NOTES" \
+              --latest
+          fi
+          echo "Released: $REPO_URL/releases/tag/$TAG"

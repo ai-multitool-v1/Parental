@@ -34,6 +34,12 @@ on:
       - "worker/**"
       - ".github/workflows/worker-deploy.yml"
   workflow_dispatch:
+    inputs:
+      resync_firebase_sa:
+        description: "Re-upload FIREBASE_SERVICE_ACCOUNT_JSON to the worker even if already set (use after fixing/rotating the repo secret)"
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: worker-deploy-${{ github.ref }}
@@ -97,6 +103,7 @@ jobs:
           FB_SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
           KEK_IN: ${{ secrets.BACKUP_KEK }}
           URLS_IN: ${{ secrets.BACKUP_URL_SECRET }}
+          RESYNC_SA: ${{ inputs.resync_firebase_sa || 'false' }}
         run: |
           set -euo pipefail
 
@@ -104,14 +111,17 @@ jobs:
             npx wrangler secret list 2>/dev/null | grep -q "\"$1\""
           }
 
-          # 1) Firebase service account — REQUIRED for every authenticated call
-          if have_secret FIREBASE_SERVICE_ACCOUNT_JSON; then
-            echo "FIREBASE_SERVICE_ACCOUNT_JSON: already set on worker"
-          elif [ -n "${FB_SA:-}" ]; then
-            printf '%s' "$FB_SA" | npx wrangler secret put FIREBASE_SERVICE_ACCOUNT_JSON
-            echo "FIREBASE_SERVICE_ACCOUNT_JSON: uploaded from repo secret"
-          else
+          # 1) Firebase service account — REQUIRED for every authenticated call.
+          #    Repo secret is the source of truth: updating it + re-running this
+          #    workflow syncs the worker with zero CLI access. (KEK/URL secrets
+          #    stay idempotent — rotating those breaks existing backups.)
+          if [ -z "${FB_SA:-}" ]; then
             echo "::warning::FIREBASE_SERVICE_ACCOUNT_JSON missing (repo secret) — the Worker will answer 'not configured' until it is added."
+          elif have_secret FIREBASE_SERVICE_ACCOUNT_JSON && [ "${RESYNC_SA:-false}" != "true" ]; then
+            echo "FIREBASE_SERVICE_ACCOUNT_JSON: already set on worker (kept — run this workflow with resync_firebase_sa=true to overwrite)"
+          else
+            printf '%s' "$FB_SA" | npx wrangler secret put FIREBASE_SERVICE_ACCOUNT_JSON
+            echo "FIREBASE_SERVICE_ACCOUNT_JSON: uploaded/synced from repo secret"
           fi
 
           # 2) BACKUP_KEK — generated ONCE on first deploy, then stable forever

@@ -95,6 +95,43 @@ export function appCheck(): AppCheck {
 }
 
 /**
+ * Public, non-secret facts about the configured service account.
+ * A Firebase project_id / service-account email are embedded in every ID
+ * token anyway (iss/aud) — exposing them on the health endpoint is safe and
+ * makes misconfigured-deployments instantly diagnosable (audience mismatch
+ * is the #1 "sign in expired" cause).
+ */
+export function saInfo(): { project: string | null; client: string | null } {
+  try {
+    const sa = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON ?? "") as SaJson;
+    return {
+      project: sa.project_id ?? null,
+      client: sa.client_email ?? null,
+    };
+  } catch {
+    return { project: null, client: null };
+  }
+}
+
+/**
+ * Maps a verifyIdToken failure to a short diagnostic reason (safe to expose —
+ * no secrets, just the failure class). This is what turns "sign in expired"
+ * into a fixable diagnosis on the client side.
+ */
+export function classifyVerifyError(err: unknown): string {
+  const msg = err instanceof Error ? err.message : String(err);
+  if (/audience|aud\b|issuer|iss\b/i.test(msg)) return "project_mismatch";
+  if (/expired/i.test(msg)) return "token_expired";
+  if (/too early|not yet|iat/i.test(msg)) return "clock_skew";
+  if (/signature|malformed|parse/i.test(msg)) return "invalid_token";
+  if (/revoked|disabled|stale|validAfter/i.test(msg)) return "revoked_or_disabled";
+  if (/permission|denied|403/i.test(msg)) return "service_account_permission";
+  if (/fetch|network|timeout|unreachable/i.test(msg)) return "upstream_unreachable";
+  if (/user|subject|sub\b/i.test(msg)) return "user_lookup_failed";
+  return "unknown";
+}
+
+/**
  * Copies Worker bindings into process.env (nodejs_compat exposes secrets
  * there, but we bind explicitly so both fetch + cron paths are identical).
  */
@@ -163,16 +200,20 @@ export async function verifyCaller(req: Request): Promise<Caller> {
     const res = await auth().verifyIdToken(tokenStr, true);
     decoded = res as unknown as Record<string, unknown>;
   } catch (err) {
+    const reason = classifyVerifyError(err);
     console.warn(
       JSON.stringify({
         severity: "WARNING",
         message: "id_token_verify_failed",
+        reason,
         error: err instanceof Error ? err.message : String(err),
       })
     );
+    // The `reason` suffix is a diagnostic class (never a secret) — it lets a
+    // curl test pinpoint a misconfigured deployment instead of a generic 401.
     throw new ApiError(
       "unauthenticated",
-      "Session expired or invalid. Please sign in again."
+      `Session expired or invalid. Please sign in again. (reason: ${reason})`
     );
   }
 

@@ -90,13 +90,18 @@ class PairingManager(
                 }
                 is AuthRepository.SignInResult.Success -> {
                     try {
+                        // forceRefreshToken=true: pairing is a rare,
+                        // security-sensitive call — always mint a fresh ID
+                        // token so a stale cached token (screen open >1 h,
+                        // device clock behind) can never fail it.
                         val result = SecureApi.call(
                             "confirmPairing",
                             mapOf(
                                 "code" to code,
                                 "deviceId" to ServiceLocator.deviceId,
                                 "deviceName" to deviceName(),
-                            )
+                            ),
+                            forceRefreshToken = true,
                         )
 
                         // Pick up {deviceRole, deviceId} custom claims NOW —
@@ -189,7 +194,8 @@ class PairingManager(
                 "resource-exhausted" ->
                     e.message ?: "Too many attempts. Please wait. / অনেকবার চেষ্টা — একটু অপেক্ষা করুন।"
                 "unauthenticated" ->
-                    "Sign-in expired. Try again. / সাইন-ইন শেষ — আবার চেষ্টা করুন।"
+                    "Sign-in session expired. Try again — if it keeps failing, check the device's Date & Time settings and reinstall the latest APK. " +
+                        "/ সাইন-ইন শেষ — আবার চেষ্টা করুন। বারবার হলে ডিভাইসের তারিখ ও সময় ঠিক আছে কিনা দেখুন এবং সর্বশেষ APK ইনস্টল করুন।"
                 "unavailable" ->
                     e.message ?: "Server unreachable. Try again later. / সার্ভারে পৌঁছানো যাচ্ছে না — পরে চেষ্টা করুন।"
                 else ->

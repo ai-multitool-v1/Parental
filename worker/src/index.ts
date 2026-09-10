@@ -15,7 +15,7 @@
 import { Hono } from "hono";
 import type { Env } from "./env";
 import { ApiError, corsHeaders, errorResponse, json, preflight } from "./http";
-import { bindEnv, verifyCaller, type Caller } from "./admin";
+import { bindEnv, saInfo, verifyCaller, type Caller } from "./admin";
 import {
   adminSetBanState,
   adminSetPlan,
@@ -158,7 +158,21 @@ app.get("/backup/get", async (c) => {
 
 /* ─────────────────────────────── health check ───────────────────────────── */
 
-app.get("/", (c) => json({ ok: true, service: "parental-control-api" }));
+app.get("/", (c) => {
+  bindEnv(c.env);
+  // sa_project is PUBLIC info (it appears in every token's iss/aud). Surfacing
+  // it makes the #1 pairing failure — a service account from the wrong
+  // Firebase project — visible in one glance: it must equal the project in
+  // the app's google-services.json, or every token is rejected as
+  // "project_mismatch".
+  const { project, client } = saInfo();
+  return json({
+    ok: true,
+    service: "parental-control-api",
+    sa_project: project,
+    sa_client: client,
+  });
+});
 
 /* ──────────────────────────── scheduled (cron) ──────────────────────────── */
 
