@@ -165,4 +165,4 @@ jobs:
             echo "3. Web dashboard: set \`NEXT_PUBLIC_SECURE_API_BASE\` = \`$URL\`"
             echo ""
             echo "Live logs: \`cd worker && npx wrangler tail\`"
-          } >> "$GITHUB_SUMMARY"
+          } >> "$GITHUB_STEP_SUMMARY"
