@@ -68,7 +68,7 @@ export function errorResponse(err: unknown, corsHeaders: HeadersInit): Response 
   // bug reports, not secret material, and this makes field debugging possible.
   const name = err instanceof Error ? err.name : "Error";
   const detail = (err instanceof Error ? err.message : String(err))
-    .slice(0, 140)
+    .slice(0, 600)
     .replace(/\s+/g, " ")
     .trim();
   // First meaningful stack frames (file:line) — pinpoints which dependency

@@ -143,7 +143,7 @@ export class FirestoreRest {
       const errText = await res.text().catch(() => "");
       const err = new RestError(
         res.status,
-        `Firestore REST ${method} ${path} → ${res.status}: ${errText.slice(0, 300)}`
+        `Firestore REST ${method} ${path} → ${res.status}: ${errText.slice(0, 900)}`
       );
       // Retry only idempotent reads; writes fail fast (see header note).
       if (method === "GET" && RETRYABLE.has(res.status) && attempt < 3) {
