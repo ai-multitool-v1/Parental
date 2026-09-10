@@ -437,7 +437,7 @@ export class FirestoreRest {
     const body = {
       structuredAggregationQuery: {
         structuredQuery: this.buildStructuredQuery(q),
-        aggregates: [{ alias: "count", count: {} }],
+        aggregations: [{ alias: "count", count: {} }],
       },
     };
     const res = await this.call("POST", "documents:runAggregationQuery", body);
