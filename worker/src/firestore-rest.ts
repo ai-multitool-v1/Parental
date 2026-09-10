@@ -418,10 +418,9 @@ export class FirestoreRest {
   }
 
   async queryGet(q: Query): Promise<QuerySnap> {
-    const body = {
-      parent: `${this.base}/documents`,
-      structuredQuery: this.buildStructuredQuery(q),
-    };
+    // parent is already in the URL (`{parent}:runQuery`) — including it in
+    // the body makes proto3 JSON parsing fail with "Unknown name".
+    const body = { structuredQuery: this.buildStructuredQuery(q) };
     const res = await this.call("POST", "documents:runQuery", body);
     const rows = Array.isArray(res) ? res : [];
     const snaps = rows
@@ -434,8 +433,8 @@ export class FirestoreRest {
   }
 
   async queryCount(q: Query): Promise<number> {
+    // parent already in URL; body carries only the aggregation query.
     const body = {
-      parent: `${this.base}/documents`,
       structuredAggregationQuery: {
         structuredQuery: this.buildStructuredQuery(q),
         aggregates: [{ alias: "count", count: {} }],
