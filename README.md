@@ -304,11 +304,14 @@ ADMIN_PASSWORD_HASH=16384$8$1$ZLGL...==...$4Ti4...==
    |------|-------|-----------|
    | `NEXT_PUBLIC_FIREBASE_API_KEY` | `AIzaSy...` | Firebase console → Web app config |
    | `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN` | `....firebaseapp.com` | 〃 |
-   | `NEXT_PUBLIC_FIREBASE_PROJECT_ID` | `setbd-parental` | 〃 |
+   | `NEXT_PUBLIC_FIREBASE_PROJECT_ID` | `parental-control-31fb5` | 〃 |
    | `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID` | `000000000000` | 〃 |
    | `NEXT_PUBLIC_FIREBASE_APP_ID` | `1:...:web:...` | 〃 |
+   | `NEXT_PUBLIC_SECURE_API_BASE` | `https://parental-control-api.<sub>.workers.dev` | **বাধ্যতামূলক (zero-cost backend)** — এটা না দিলে dashboard demo mode-এ থাকবে |
    | `ADMIN_USERNAME` | আপনার পছন্দের admin নাম | optional (ডিফল্ট `admin`) |
    | `ADMIN_PASSWORD_HASH` | উপরের generator থেকে hash | **Vercel-এ বাধ্যতামূলক** (নিচের নোট দেখুন) |
+
+   > Real mode চালু হওয়ার শর্ত: `NEXT_PUBLIC_FIREBASE_API_KEY` + `NEXT_PUBLIC_FIREBASE_PROJECT_ID` + `NEXT_PUBLIC_FIREBASE_APP_ID` + `NEXT_PUBLIC_SECURE_API_BASE` — চারটিই থাকতে হবে।
 
 5. **Deploy** চাপুন — ২–৩ মিনিটে লাইভ।
 
