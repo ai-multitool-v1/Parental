@@ -89,17 +89,23 @@ export class FirestoreRest {
   private token: TokenCache | null = null;
   private credential: { getAccessToken(): Promise<AccessToken> };
   public readonly base: string;
+  public readonly projectId: string;
 
   constructor(app: App) {
     this.credential = app.options.credential as unknown as {
       getAccessToken(): Promise<AccessToken>;
     };
-    const projectId = app.options.projectId;
-    this.base = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)`;
+    this.projectId = app.options.projectId as string;
+    this.base = `https://firestore.googleapis.com/v1/projects/${this.projectId}/databases/(default)`;
   }
 
   docNameFor(path: string): string {
     return `${this.base}/documents/${path}`;
+  }
+
+  /** Relative resource name for request BODIES: projects/…/documents/… */
+  resourceName(path: string): string {
+    return `projects/${this.projectId}/databases/(default)/documents/${path}`;
   }
 
   private async authHeader(): Promise<Record<string, string>> {
@@ -337,7 +343,7 @@ export class FirestoreRest {
     // `fields` must be the properly NESTED REST structure — dotted paths are
     // only valid inside updateMask / fieldTransforms / query filters.
     const update: Record<string, unknown> = {
-      name: this.docName(ref.path),
+      name: this.resourceName(ref.path),
       fields: this.buildFields(data),
     };
     const write: Record<string, unknown> = { update };
@@ -672,7 +678,7 @@ export class FsTransaction {
   }
 
   delete(ref: DocRef): this {
-    this.writes.push({ delete: this.store.docNameFor(ref.path) });
+    this.writes.push({ delete: this.store.resourceName(ref.path) });
     return this;
   }
 
@@ -697,7 +703,7 @@ export class BulkWriterLite {
   }
 
   delete(ref: DocRef): void {
-    this.writes.push({ delete: this.store.docNameFor(ref.path) });
+    this.writes.push({ delete: this.store.resourceName(ref.path) });
   }
 
   async close(): Promise<void> {
