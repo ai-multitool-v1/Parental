@@ -128,7 +128,14 @@ export function classifyVerifyError(err: unknown): string {
   if (/permission|denied|403/i.test(msg)) return "service_account_permission";
   if (/fetch|network|timeout|unreachable/i.test(msg)) return "upstream_unreachable";
   if (/user|subject|sub\b/i.test(msg)) return "user_lookup_failed";
-  return "unknown";
+  // Unrecognized failure — surface the SDK error code/name + a short generic
+  // message so the deployment is still diagnosable. verifyIdToken errors
+  // never embed secrets (they are schema/IO errors).
+  const code = (err as { code?: string; errorCode?: string })?.code ??
+    (err as { errorCode?: string })?.errorCode ?? "";
+  const name = err instanceof Error ? err.name : "Error";
+  const snippet = msg.slice(0, 140).replace(/\s+/g, " ").trim();
+  return `unknown [${name}${code ? " " + code : ""}] ${snippet}`;
 }
 
 /**
