@@ -2,7 +2,7 @@
   "name": "parental-worker",
   "version": "1.0.0",
   "private": true,
-  "description": "Trusted backend for the Parental Control platform — Cloudflare Workers (zero-cost deployment).",
+  "description": "Trusted backend for the Parental Control platform \u2014 Cloudflare Workers (zero-cost deployment).",
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
@@ -14,8 +14,8 @@
     "hono": "^4.6.14"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20250109.0",
+    "@cloudflare/workers-types": "^5.20260910.1",
     "typescript": "^5.7.2",
-    "wrangler": "^3.99.0"
+    "wrangler": "^4.131.0"
   }
 }
