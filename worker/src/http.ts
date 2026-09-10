@@ -64,8 +64,15 @@ export function errorResponse(err: unknown, corsHeaders: HeadersInit): Response 
       error: err instanceof Error ? err.message : String(err),
     })
   );
+  // Sanitized snippet (name + short generic message) — internal errors are
+  // bug reports, not secret material, and this makes field debugging possible.
+  const name = err instanceof Error ? err.name : "Error";
+  const detail = (err instanceof Error ? err.message : String(err))
+    .slice(0, 140)
+    .replace(/\s+/g, " ")
+    .trim();
   return json(
-    { error: { code: "internal", message: "Internal error. Try again." } },
+    { error: { code: "internal", message: `Internal error. Try again. [${name}] ${detail}` } },
     500,
     corsHeaders
   );
