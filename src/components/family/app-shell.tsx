@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { useTheme } from "next-themes";
 import { useFamily } from "@/lib/family/store";
+import { isRealMode } from "@/lib/family/real";
 import { CREDIT_LINE, PLATFORM_VERSION } from "@/lib/family/branding";
 import { cn } from "@/lib/utils";
 import { OverviewView } from "./overview-view";
@@ -241,6 +242,18 @@ export function AppShell() {
           </div>
 
           <div className="ml-auto flex items-center gap-2 sm:gap-3">
+            {/* মোড ব্যাজ — ডেমো হলে স্পষ্ট সতর্কতা, রিয়েল হলে নিশ্চিতকরণ */}
+            {isRealMode() ? (
+              <Badge className="hidden sm:inline-flex bg-emerald-600 text-white">লাইভ</Badge>
+            ) : (
+              <Badge
+                variant="outline"
+                className="hidden sm:inline-flex text-amber-600 border-amber-400 dark:text-amber-400 dark:border-amber-600"
+                title="ডেমো মোড — Vercel env vars সেট করে Redeploy করলে রিয়েল মোড চালু হবে"
+              >
+                ডেমো মোড
+              </Badge>
+            )}
             <PlanBadge />
             {device.paired && (
               <div className="hidden md:flex items-center gap-2 rounded-full border px-3 py-1.5">

@@ -37,6 +37,8 @@ import {
 } from "./engine";
 import {
   isRealMode,
+  observeAuth,
+  fetchProfile,
   realLogin,
   realSignup,
   realLogout,
@@ -206,7 +208,14 @@ type Store = FamilyState & {
   /* system */
   tick: () => void;
   resetDemo: () => void;
+  /** রিফ্রেশের পর Firebase Auth সেশন রিস্টোর (real mode) — true থাকা অবস্থায়
+   *  UI loader দেখায়, লগইন স্ক্রিনে ফেলে না। */
+  authChecking: boolean;
+  /** অ্যাপ-মাউন্টে একবার ডাকতে হয় (page.tsx) — একবারই চলে। */
+  bootstrapAuth: () => void;
 };
+
+let authBootstrapStarted = false;
 
 let tickCount = 0;
 let lowBatteryNoted = false;
@@ -433,6 +442,62 @@ export const useFamily = create<Store>((set, get) => {
   return {
     ...initialState(),
 
+    authChecking: true,
+    bootstrapAuth: () => {
+      if (authBootstrapStarted) return;
+      authBootstrapStarted = true;
+      // DEMO mode: ডেমো অ্যাকাউন্ট সার্ভারলেস ফাইলস্টোরে থাকে (এফিমারাল) —
+      // রিফ্রেশে সেশন রিস্টোর করা হয় না; সাথে সাথেই লগইন স্ক্রিন দেখাও।
+      if (!isRealMode()) {
+        set({ authChecking: false });
+        return;
+      }
+      // REAL mode: Firebase Auth নিজেই সেশন পারসিস্ট করে (browserLocalPersistence)
+      // — observer দিয়ে রিফ্রেশের পর UI state রিস্টোর করি।
+      observeAuth((user) => {
+        if (!user) {
+          // সত্যিকারের লগআউট (বা টোকেন রিভোক) — UI-ও লগআউট করো।
+          set({ parent: null, authChecking: false });
+          return;
+        }
+        // লগইন/সাইনআপ action ইতিমধ্যে parent সেট করেছে — ডাবল-সেট এড়াও।
+        if (get().parent?.uid === user.uid) {
+          set({ authChecking: false });
+          return;
+        }
+        // সেশন রিস্টোর: profile কলটি সার্ভারে users/{uid} লেজি-প্রোভিশনও করে।
+        fetchProfile(user)
+          .then((p) => {
+            set({
+              parent: {
+                uid: p.uid,
+                name: p.name,
+                email: p.email,
+                mfaEnabled: false,
+                loginAt: Date.now(),
+                plan: p.plan,
+              },
+              authChecking: false,
+            });
+          })
+          .catch(() => {
+            // Worker সাময়িকভাবে নাগালের বাইরে হলেও ইউজারকে লগ-আউট করা ঠিক নয় —
+            // মিনিমাল প্রোফাইল নিয়ে সেশন ধরে রাখি (পরের কলে আবার চেষ্টা হবে)।
+            set({
+              parent: {
+                uid: user.uid,
+                name: user.displayName ?? (user.email ?? "").split("@")[0],
+                email: user.email ?? "",
+                mfaEnabled: false,
+                loginAt: Date.now(),
+                plan: get().parent?.plan ?? "free",
+              },
+              authChecking: false,
+            });
+          });
+      });
+    },
+
     /* ---------------- auth (v1.4.1 — server-verified) ---------------- */
     login: async (email, password) => {
       const e = email.trim();
@@ -596,7 +661,8 @@ export const useFamily = create<Store>((set, get) => {
       }
       const code = genCode();
       set({ pairing: { code, createdAt: Date.now(), expiresAt: Date.now() + 5 * 60_000, used: false } });
-      addAudit({ actorRole: "parent", action: "PAIRING_CODE_CREATED", result: "APPROVED", detail: "8-অক্ষর, ৫ মিনিট TTL, single-use" });
+      addAudit({ actorRole: "parent", action: "PAIRING_CODE_CREATED", result: "APPROVED", detail: "8-অক্ষর, ৫ মিনিট TTL, single-use (ডেমো)" });
+      toast.warning("ডেমো মোড: এই কোড আসল child app-এ কাজ করবে না — এটি শুধু সিমুলেশন। Real mode চালু হলে Worker-issued কোড আসবে।");
     },
     pairDevice: (code) => {
       const p = get().pairing;

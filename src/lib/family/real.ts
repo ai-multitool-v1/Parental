@@ -16,6 +16,7 @@
 import { initializeApp, getApps, type FirebaseApp } from "firebase/app";
 import {
   getAuth,
+  onAuthStateChanged,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signOut as fbSignOut,
@@ -29,12 +30,25 @@ export const FIREBASE_CLIENT_ENV_KEYS = [
   "NEXT_PUBLIC_FIREBASE_APP_ID",
 ] as const;
 
+/**
+ * Build-time-inlined env reader.
+ *
+ * ⚠️ CRITICAL: Next.js/Turbopack inlines ONLY literal `process.env.NEXT_PUBLIC_X`
+ * expressions into the client bundle — dynamic `process.env[key]` lookups are NOT
+ * replaced, so they silently return undefined in the browser and the dashboard
+ * would ALWAYS run in demo mode even with env vars set on Vercel. Hence this
+ * explicit literal map (all NEXT_PUBLIC_* keys used by the client).
+ */
 function readEnv(key: string): string | undefined {
-  try {
-    return (process.env as unknown as Record<string, string | undefined>)[key];
-  } catch {
-    return undefined;
-  }
+  const map: Record<string, string | undefined> = {
+    NEXT_PUBLIC_FIREBASE_API_KEY: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+    NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+    NEXT_PUBLIC_FIREBASE_PROJECT_ID: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+    NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+    NEXT_PUBLIC_FIREBASE_APP_ID: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
+    NEXT_PUBLIC_SECURE_API_BASE: process.env.NEXT_PUBLIC_SECURE_API_BASE,
+  };
+  return map[key];
 }
 
 /** True when the real backend is configured for THIS deployment. */
@@ -64,6 +78,16 @@ function app(): FirebaseApp {
 
 function auth(): Auth {
   return getAuth(app());
+}
+
+/**
+ * Firebase Auth session observer — browser-এ Firebase নিজেই সেশন পারসিস্ট করে
+ * (default: browserLocalPersistence), কিন্তু UI state (zustand) রিফ্রেশে মুছে
+ * যায়। এই observer দিয়ে রিফ্রেশের পর সেশন রিস্টোর করা হয়।
+ * Returns unsubscribe function.
+ */
+export function observeAuth(cb: (user: User | null) => void): () => void {
+  return onAuthStateChanged(auth(), cb);
 }
 
 function apiBase(): string {
@@ -188,7 +212,7 @@ export async function realLogout(): Promise<void> {
   }
 }
 
-async function fetchProfile(user: User, fallbackName?: string): Promise<RealProfile> {
+export async function fetchProfile(user: User, fallbackName?: string): Promise<RealProfile> {
   // `profile` also lazily provisions users/{uid} on the server (role=parent).
   const data = await callSecure("profile");
   return {

@@ -41,12 +41,14 @@ export const FIREBASE_ENV_KEYS = [
 
 export function isFirebaseConfigured(): boolean {
   if (typeof window === "undefined") return false;
-  try {
-    const env = (import.meta as unknown as { env: Record<string, string | undefined> }).env ?? {};
-    return FIREBASE_ENV_KEYS.every((k) => Boolean(env[k]));
-  } catch {
-    return false;
-  }
+  // ⚠️ Next.js শুধু literal process.env.NEXT_PUBLIC_* access build-time-এ inline
+  // করে — dynamic lookup (import.meta.env / process.env[key]) browser-এ সবসময়
+  // undefined দেয়। তাই সরাসরি literal access (real.ts readEnv-এর মতো)।
+  return Boolean(
+    process.env.NEXT_PUBLIC_FIREBASE_API_KEY &&
+      process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID &&
+      process.env.NEXT_PUBLIC_FIREBASE_APP_ID
+  );
 }
 
 export const WEBRTC_CONFIG = {

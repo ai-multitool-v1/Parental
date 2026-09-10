@@ -33,6 +33,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { useFamily, type LoginResultCode, type SignupResultCode } from "@/lib/family/store";
+import { isRealMode } from "@/lib/family/real";
 import { DEVELOPER_CREDIT, POWERED_BY, PLATFORM_VERSION } from "@/lib/family/branding";
 
 type Mode = "login" | "signup";
@@ -176,6 +177,13 @@ export function LoginScreen() {
                 </button>
               </div>
             </CardHeader>
+            {!isRealMode() && (
+              <div className="px-6 pb-1">
+                <p className="rounded-lg border border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-950/40 p-2.5 text-xs text-amber-700 dark:text-amber-300">
+                  ⚠️ ডেমো মোড চালু আছে — অ্যাকাউন্ট ও পেয়ারিং কোড সার্ভারে সেভ হয় না, আর কোড আসল child app-এ কাজ করবে না। রিয়েল মোডের জন্য Vercel-এ Firebase + Worker env vars সেট করে Redeploy করুন।
+                </p>
+              </div>
+            )}
             {mode === "login" ? (
               <form onSubmit={submitLogin}>
                 <CardContent className="space-y-4">
