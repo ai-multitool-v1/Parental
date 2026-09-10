@@ -71,8 +71,21 @@ export function errorResponse(err: unknown, corsHeaders: HeadersInit): Response 
     .slice(0, 140)
     .replace(/\s+/g, " ")
     .trim();
+  // First meaningful stack frames (file:line) — pinpoints which dependency
+  // threw without leaking any data.
+  const frames = (err instanceof Error ? err.stack ?? "" : "")
+    .split("\n")
+    .filter((l) => l.includes("at "))
+    .slice(0, 4)
+    .map((l) => l.trim().replace(/\s+/g, " ").slice(0, 90))
+    .join(" | ");
   return json(
-    { error: { code: "internal", message: `Internal error. Try again. [${name}] ${detail}` } },
+    {
+      error: {
+        code: "internal",
+        message: `Internal error. Try again. [${name}] ${detail}${frames ? " §" + frames : ""}`,
+      },
+    },
     500,
     corsHeaders
   );
