@@ -7,7 +7,7 @@
  */
 import { useState } from "react";
 import {
-  Smartphone, QrCode, RefreshCw, Unplug, Copy, CheckCheck, HeartPulse, Info, Link2,
+  Smartphone, QrCode, RefreshCw, Unplug, Copy, CheckCheck, HeartPulse, Info, Link2, Loader2, AlertTriangle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -25,6 +25,8 @@ export function DevicesView({ onNavigate }: { onNavigate: (v: ViewKey) => void }
   const device = useFamily((s) => s.device);
   const pairing = useFamily((s) => s.pairing);
   const generatePairingCode = useFamily((s) => s.generatePairingCode);
+  const pairingLoading = useFamily((s) => s.pairingLoading);
+  const pairingError = useFamily((s) => s.pairingError);
   const pairDevice = useFamily((s) => s.pairDevice);
   const unpair = useFamily((s) => s.unpairDevice);
   const [code, setCode] = useState("");
@@ -96,11 +98,23 @@ export function DevicesView({ onNavigate }: { onNavigate: (v: ViewKey) => void }
         description="কোড ৫ মিনিটে মেয়াদোত্তীর্ণ হয় এবং একবারই ব্যবহার করা যায়"
         icon={<QrCode className="h-4 w-4 text-muted-foreground" />}
         action={
-          <Button size="sm" onClick={generatePairingCode} className="bg-emerald-600 hover:bg-emerald-700 text-white">
-            <RefreshCw className="h-4 w-4 mr-1.5" /> কোড তৈরি করুন
+          <Button size="sm" onClick={generatePairingCode} disabled={pairingLoading} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+            {pairingLoading
+              ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+              : <RefreshCw className="h-4 w-4 mr-1.5" />}
+            {pairingLoading ? "তৈরি হচ্ছে…" : "কোড তৈরি করুন"}
           </Button>
         }
       >
+        {pairingError && (
+          <Alert variant="destructive" className="mb-4">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertTitle>পেয়ারিং কোড তৈরি হয়নি</AlertTitle>
+            <AlertDescription>
+              {pairingError}
+            </AlertDescription>
+          </Alert>
+        )}
         {pairingActive ? (
           <div className="flex flex-col sm:flex-row items-center gap-4">
             <div className="rounded-xl border-2 border-dashed border-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 px-6 py-4 text-center">

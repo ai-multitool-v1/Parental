@@ -86,24 +86,48 @@ export const generatePairingCode: Handler = async (env, caller, _data) => {
   void env;
   const uid = caller.uid;
   assertAppCheck(caller);
-  await enforceRateLimit(
-    `pairing-code:${uid}`,
-    { max: 10, windowMs: 60 * 60 * 1000 },
-    "Too many pairing codes requested. Please wait before trying again."
-  );
 
-  const activeCount = await db()
+  // IDEMPOTENT: if this parent already has an active (unused, unexpired) code,
+  // return it instead of erroring. Repeated clicks / page reloads must never
+  // burn the quota or block pairing with "already have N active codes".
+  // (Quota is enforced below only when a NEW code would actually be created.)
+  // NOTE: equality-only query — needs NO composite Firestore index (orderBy
+  // would); we pick the newest by expiresAt in code below.
+  const activeQuery = await db()
     .collection("pairingCodes")
     .where("parentUid", "==", uid)
     .where("used", "==", false)
-    .count()
+    .limit(MAX_ACTIVE_PAIRING_CODES_PER_PARENT)
     .get();
-  if ((activeCount.data().count ?? 0) >= MAX_ACTIVE_PAIRING_CODES_PER_PARENT) {
-    throw new ApiError(
-      "resource-exhausted",
-      `You already have ${MAX_ACTIVE_PAIRING_CODES_PER_PARENT} active pairing codes. Wait for them to expire.`
-    );
+  const nowMs = Date.now();
+  type ActiveCode = { code: string; expiresAt: { toMillis(): number } };
+  const activeDocs = activeQuery.docs
+    .map((d) => d.data() as { code?: string; expiresAt?: { toMillis(): number } } | undefined)
+    .filter((d): d is ActiveCode =>
+      !!d && typeof d.code === "string" && !!d.expiresAt && d.expiresAt.toMillis() > nowMs)
+    .sort((a, b) => b.expiresAt.toMillis() - a.expiresAt.toMillis());
+  if (activeDocs.length > 0) {
+    // Newest valid code; the client just shows it with its remaining TTL.
+    const best = activeDocs[0]!;
+    return {
+      ok: true,
+      data: {
+        code: best.code,
+        expiresAt: best.expiresAt.toMillis(),
+        ttlSeconds: Math.max(1, Math.floor((best.expiresAt.toMillis() - nowMs) / 1000)),
+        reused: true,
+      },
+    };
   }
+
+  // No active code → creating a new one is rate-limited (anti-abuse).
+  // 30/hour: idempotent path above already reuses active codes, so legitimate
+  // parents rarely create more than a handful per hour; abuse still capped.
+  await enforceRateLimit(
+    `pairing-code:${uid}`,
+    { max: 30, windowMs: 60 * 60 * 1000 },
+    "Too many pairing codes requested. Please wait before trying again."
+  );
 
   const code = await generateUnbiasedCode();
   const expiresAt = Timestamp.fromMillis(Date.now() + PAIRING_CODE_TTL_MS);

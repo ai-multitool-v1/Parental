@@ -31,7 +31,7 @@ def worker_call(name, token, payload):
     return out.stdout
 
 # 1. parent user
-suffix = "e2e918"
+suffix = "e2e1113"
 p = idt_call("accounts:signUp", {"email": f"e2e-parent-{suffix}@test-setbd.com", "password": "E2eTest!918x", "returnSecureToken": True})
 if "idToken" not in p:
     # exists → sign in

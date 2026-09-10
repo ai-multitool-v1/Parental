@@ -11,8 +11,10 @@
 import { useEffect } from "react";
 import { ShieldCheck } from "lucide-react";
 import { useFamily } from "@/lib/family/store";
+import { isRealMode } from "@/lib/family/real";
 import { LoginScreen } from "@/components/family/login-screen";
 import { AppShell } from "@/components/family/app-shell";
+import { SetupRequired } from "@/components/family/setup-required";
 import { SplashScreen, useSplashOnce } from "@/components/family/splash-screen";
 
 export default function Page() {
@@ -41,5 +43,8 @@ export default function Page() {
       </div>
     );
   }
+  // PRODUCTION RULE: demo/simulation প্রোডাকশনে নিষিদ্ধ — env না থাকলে
+  // কোনো ডেমো লগইন/ডেটা তৈরি হবে না, setup নির্দেশনা দেখানো হবে।
+  if (!isRealMode()) return <SetupRequired />;
   return parent ? <AppShell /> : <LoginScreen />;
 }

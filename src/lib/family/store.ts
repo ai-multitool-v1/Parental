@@ -36,6 +36,7 @@ import {
   uid,
 } from "./engine";
 import {
+  callSecure,
   isRealMode,
   observeAuth,
   fetchProfile,
@@ -172,6 +173,10 @@ type Store = FamilyState & {
   isPremium: () => boolean;
   /* pairing */
   generatePairingCode: () => void;
+  /** Worker কল চলাকালীন true — বাটন spinner দেখায় */
+  pairingLoading: boolean;
+  /** শেষ কোড-তৈরির ত্রুটি (UI-তে inline দেখানো হয়) */
+  pairingError: string | null;
   pairDevice: (code: string) => boolean;
   unpairDevice: () => void;
   /* command pipeline */
@@ -443,6 +448,8 @@ export const useFamily = create<Store>((set, get) => {
     ...initialState(),
 
     authChecking: true,
+    pairingLoading: false,
+    pairingError: null,
     bootstrapAuth: () => {
       if (authBootstrapStarted) return;
       authBootstrapStarted = true;
@@ -646,16 +653,34 @@ export const useFamily = create<Store>((set, get) => {
       if (p && !p.used && Date.now() < p.expiresAt) return; // max 1 active
       // REAL mode: the code is issued by the trusted backend (single-use,
       // 5-min TTL, server-audited) — the demo engine cannot fake it.
+      // Worker এখন idempotent: active কোড থাকলে সেটাই ফেরত দেয়, নতুন কোড
+      // তৈরি হয় না — তাই repeated click এ quota নষ্ট হয় না, ব্লকও হয় না।
       if (isRealMode()) {
+        set({ pairingLoading: true, pairingError: null });
+        const fail = (msg: string) => {
+          set({ pairingLoading: false, pairingError: msg });
+          addAudit({ actorRole: "parent", action: "PAIRING_CODE_CREATED", result: "DENIED", detail: msg });
+          toast.error(`পেয়ারিং কোড তৈরি হয়নি: ${msg}`);
+        };
+        const ok = ({ code, expiresAt }: { code: string; expiresAt: number }) => {
+          set({ pairing: { code, createdAt: Date.now(), expiresAt, used: false }, pairingLoading: false, pairingError: null });
+          addAudit({ actorRole: "parent", action: "PAIRING_CODE_CREATED", result: "APPROVED", detail: "Worker-issued 8-অক্ষর কোড, ৫ মিনিট TTL, single-use" });
+        };
         realGeneratePairingCode()
-          .then(({ code, expiresAt }) => {
-            set({ pairing: { code, createdAt: Date.now(), expiresAt, used: false } });
-            addAudit({ actorRole: "parent", action: "PAIRING_CODE_CREATED", result: "APPROVED", detail: "Worker-issued 8-অক্ষর কোড, ৫ মিনিট TTL, single-use" });
-          })
-          .catch((err: unknown) => {
-            const msg = err instanceof RealApiError ? err.message : "কোড তৈরি ব্যর্থ";
-            addAudit({ actorRole: "parent", action: "PAIRING_CODE_CREATED", result: "DENIED", detail: msg });
-            toast.error(`পেয়ারিং কোড তৈরি হয়নি: ${msg}`);
+          .then(ok)
+          .catch((err1: unknown) => {
+            // Self-heal: প্রোফাইল প্রোভিশন মিস হয়ে থাকলে একবার profile কল করে আবার চেষ্টা
+            callSecure("profile", {})
+              .then(() => realGeneratePairingCode())
+              .then(ok)
+              .catch((err2: unknown) => {
+                const e = err2 instanceof RealApiError ? err2 : err1;
+                const code = e instanceof RealApiError ? e.code : "";
+                let msg = e instanceof RealApiError ? e.message : "সার্ভারে পৌঁছানো যায়নি — ইন্টারনেট দেখে আবার চেষ্টা করুন";
+                if (code === "resource-exhausted") msg = `অনেকবার কোড তৈরি হয়েছে — কয়েক মিনিট অপেক্ষা করে আবার চেষ্টা করুন। (${msg})`;
+                if (code === "unauthenticated") msg = "সাইন-ইন শেষ হয়ে গেছে — লগআউট করে আবার সাইন ইন করুন";
+                fail(msg);
+              });
           });
         return;
       }
@@ -1159,15 +1184,19 @@ export const useFamily = create<Store>((set, get) => {
       // admin প্যানেলের লাইভ সেশন monitor — parent activity heartbeat
       useAdminStore.getState().touchActivity(st.parent.email);
 
-      // battery
+      // battery — শুধু sandbox simulation (real mode-এ আসল ব্যাটারি child app
+      // থেকে আসে; এখানে fake drain/charge চালালে ভুল ডেটা ও ভুল BATTERY_LOW
+      // audit তৈরি হতো)
       let battery = st.device.batteryLevel;
-      if (st.device.isCharging) battery = Math.min(100, battery + 0.4);
-      else if (online) battery = Math.max(1, battery - 0.1);
-      if (battery < 15 && !lowBatteryNoted) {
-        lowBatteryNoted = true;
-        addAudit({ actorRole: "device", action: "BATTERY_LOW", result: "EXECUTED", detail: `battery ${Math.round(battery)}% — অভিভাবক নোটিফিকেশন` });
+      if (!isRealMode()) {
+        if (st.device.isCharging) battery = Math.min(100, battery + 0.4);
+        else if (online) battery = Math.max(1, battery - 0.1);
+        if (battery < 15 && !lowBatteryNoted) {
+          lowBatteryNoted = true;
+          addAudit({ actorRole: "device", action: "BATTERY_LOW", result: "EXECUTED", detail: `battery ${Math.round(battery)}% — অভিভাবক নোটিফিকেশন` });
+        }
+        if (battery >= 20) lowBatteryNoted = false;
       }
-      if (battery >= 20) lowBatteryNoted = false;
 
       // bedtime runtime state
       const bedtimeActive = isBedtimeActive(st.device.policy);
@@ -1323,6 +1352,8 @@ export const useFamily = create<Store>((set, get) => {
     },
 
     resetDemo: () => {
+      // real mode-এ এটি "লগআউট + লোকাল state রিসেট" — Firebase অ্যাকাউন্ট মুছে না
+      if (isRealMode()) void realLogout();
       set({ ...initialState() });
       // v1.4.1: অ্যাডমিন রেজিস্ট্রি এখন server-side — client থেকে reset নেই
       // (নিরাপত্তা সীমানা সার্ভারে; ban/plan state ইচ্ছামতো মোছা যায় না)।

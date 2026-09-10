@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useFamily } from "@/lib/family/store";
 import { TELEGRAM_URL, TELEGRAM_HANDLE, CREDIT_LINE } from "@/lib/family/branding";
+import { isRealMode } from "@/lib/family/real";
 import { SectionCard, PremiumUpsellDialog } from "./ui-bits";
 
 export function SettingsView() {
@@ -22,6 +23,7 @@ export function SettingsView() {
   const resetDemo = useFamily((s) => s.resetDemo);
   const isPremium = useFamily((s) => s.isPremium());
   const [upsell, setUpsell] = useState(false);
+  const realMode = isRealMode();
 
   return (
     <div className="space-y-5">
@@ -100,28 +102,35 @@ export function SettingsView() {
         </div>
       </SectionCard>
 
-      {/* অ্যাকাউন্ট মুছে ফেলা */}
-      <SectionCard title="অ্যাকাউন্ট মুছে ফেলুন" icon={<Trash2 className="h-4 w-4 text-muted-foreground" />}>
+      {/* সেশন রিসেট (real mode: লগআউট + লোকাল ডেটা; আসল অ্যাকাউন্ট থেকে যায়) */}
+      <SectionCard
+        title={realMode ? "লগআউট ও লোকাল ডেটা রিসেট" : "অ্যাকাউন্ট মুছে ফেলুন"}
+        icon={<Trash2 className="h-4 w-4 text-muted-foreground" />}
+      >
         <p className="text-sm text-muted-foreground mb-3">
-          অ্যাকাউন্ট মুছলে এই অভিভাবক অ্যাকাউন্টের সব সেটিংস ও ডিভাইস লিংক সরে যাবে। এই অ্যাকশন ফেরানো যায় না।
+          {realMode
+            ? "এটি আপনাকে লগআউট করবে এবং এই ব্রাউজারের লোকাল স্টেট মুছবে। আপনার Firebase অ্যাকাউন্ট ও Firestore ডেটা অক্ষত থাকবে।"
+            : "অ্যাকাউন্ট মুছলে এই অভিভাবক অ্যাকাউন্টের সব সেটিংস ও ডিভাইস লিংক সরে যাবে। এই অ্যাকশন ফেরানো যায় না।"}
         </p>
         <AlertDialog>
           <AlertDialogTrigger asChild>
             <Button variant="destructive" size="sm">
-              <Trash2 className="h-4 w-4 mr-1.5" /> অ্যাকাউন্ট মুছুন
+              <Trash2 className="h-4 w-4 mr-1.5" /> {realMode ? "লগআউট ও রিসেট" : "অ্যাকাউন্ট মুছুন"}
             </Button>
           </AlertDialogTrigger>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>অ্যাকাউন্ট ও সব ডেটা মুছবেন?</AlertDialogTitle>
+              <AlertDialogTitle>{realMode ? "লগআউট ও রিসেট করবেন?" : "অ্যাকাউন্ট ও সব ডেটা মুছবেন?"}</AlertDialogTitle>
               <AlertDialogDescription>
-                ডিভাইস লিংক, সেটিংস ও স্থানীয় ডেটা মুছে যাবে এবং আপনি লগআউট হয়ে যাবেন।
+                {realMode
+                  ? "লোকাল ডেটা মুছে যাবে এবং আপনি লগআউট হয়ে যাবেন। অ্যাকাউন্ট মুছবে না — আবার সাইন ইন করলেই ফিরে পাবেন।"
+                  : "ডিভাইস লিংক, সেটিংস ও স্থানীয় ডেটা মুছে যাবে এবং আপনি লগআউট হয়ে যাবেন।"}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>বাতিল</AlertDialogCancel>
               <AlertDialogAction className="bg-rose-600 hover:bg-rose-700" onClick={resetDemo}>
-                সব মুছে ফেলুন
+                {realMode ? "লগআউট করুন" : "সব মুছে ফেলুন"}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
