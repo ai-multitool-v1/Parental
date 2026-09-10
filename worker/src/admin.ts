@@ -16,13 +16,14 @@
  */
 
 import { initializeApp, getApps, cert, App } from "firebase-admin/app";
-import { getFirestore, Firestore, Timestamp } from "firebase-admin/firestore";
+import { Timestamp } from "firebase-admin/firestore";
 import { getAuth, Auth } from "firebase-admin/auth";
 import { getMessaging, Messaging } from "firebase-admin/messaging";
 import { getAppCheck, AppCheck } from "firebase-admin/app-check";
 import process from "node:process";
 import { ApiError } from "./http";
 import type { Env } from "./env";
+import { FirestoreLite, FirestoreRest } from "./firestore-rest";
 
 export interface Caller {
   uid: string;
@@ -33,7 +34,6 @@ export interface Caller {
 }
 
 let cachedApp: App | null = null;
-let firestoreReady = false;
 
 interface SaJson {
   project_id?: string;
@@ -71,18 +71,21 @@ function app(): App {
   return cachedApp;
 }
 
-function fdb(): Firestore {
-  const f = getFirestore(app());
-  if (!firestoreReady) {
-    // gRPC is unavailable on workerd — force the HTTPS REST transport.
-    f.settings({ preferRest: true });
-    firestoreReady = true;
-  }
-  return f;
-}
+/**
+ * Firestore over REST (fetch-only). The firebase-admin Firestore client is
+ * unusable on Workers: google-gax loads protos via protobufjs, which compiles
+ * codecs with `new Function` — disallowed by the runtime (EvalError). See
+ * firestore-rest.ts for the full rationale and the implemented API subset.
+ */
+let restStore: FirestoreRest | null = null;
+let lite: FirestoreLite | null = null;
 
-export function db(): Firestore {
-  return fdb();
+export function db(): FirestoreLite {
+  if (!lite) {
+    restStore ??= new FirestoreRest(app());
+    lite = new FirestoreLite(restStore);
+  }
+  return lite;
 }
 export function auth(): Auth {
   return getAuth(app());

@@ -23,8 +23,8 @@ import { randomUUID } from "node:crypto";
 import {
   FieldValue,
   Timestamp,
-  Transaction,
 } from "firebase-admin/firestore";
+import type { FsTransaction } from "./firestore-rest";
 import { db, auth, messaging, type Caller, assertAppCheck } from "./admin";
 import { ApiError } from "./http";
 import { writeAudit } from "./audit";
@@ -224,7 +224,7 @@ async function runPairingTransaction(
   childUid: string,
   deviceName?: string
 ): Promise<string> {
-  return db().runTransaction(async (tx: Transaction) => {
+  return db().runTransaction(async (tx: FsTransaction) => {
     const codeRef = db().doc(`pairingCodes/${code}`);
     const codeSnap = await tx.get(codeRef);
     if (!codeSnap.exists) {
@@ -234,7 +234,7 @@ async function runPairingTransaction(
     if (codeData["used"] === true) {
       throw new ApiError("failed-precondition", "This pairing code was already used.");
     }
-    const expiresAt = codeData["expiresAt"];
+    const expiresAt = codeData["expiresAt"] as { toMillis?: () => number } | null | undefined;
     if (
       !expiresAt ||
       typeof expiresAt.toMillis !== "function" ||
@@ -1367,7 +1367,7 @@ export const backupListForChild: Handler = async (_env, caller, data) => {
       .limit(300)
       .get();
     for (const it of snap.docs) {
-      const v = it.data();
+      const v = it.data()!;
       items.push({
         deviceId: d.id,
         itemId: it.id,
@@ -1738,7 +1738,7 @@ async function escalateUnacknowledgedAlerts(): Promise<number> {
   let reminders = 0;
 
   for (const alertDoc of openAlerts.docs) {
-    const alert = alertDoc.data();
+    const alert = alertDoc.data()!;
     const parentUids = Array.isArray(alert["parentUids"])
       ? (alert["parentUids"] as string[])
       : [];
