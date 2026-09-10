@@ -160,12 +160,28 @@ export const confirmPairing: Handler = async (env, caller, data) => {
   const deviceName = optionalString(data["deviceName"], "deviceName", 64);
 
   // Guard: parents must pair from the child device app.
+  // AUTO-HEAL: earlier deploys provisioned users/{uid} role:"parent" for every
+  // unpaired caller — including genuine anonymous child devices, whose pairing
+  // would then be blocked forever. A profile that carries ONLY default
+  // provisioning fields (role/plan/timestamps, free plan, not banned/admin)
+  // is stale provisioning — remove it and let pairing proceed. A profile with
+  // ANY real parent data (premium plan, ban state, extras) still trips the
+  // guard.
   const callerProfile = await db().doc(`users/${uid}`).get();
   if (callerProfile.exists && callerProfile.get("role") === "parent") {
-    throw new ApiError(
-      "failed-precondition",
-      "Pairing must be confirmed from the child device app, not from a parent account."
+    const d = callerProfile.data() ?? {};
+    const defaultOnly = Object.keys(d).every((k) =>
+      ["role", "plan", "createdAt", "lastSeenAt", "updatedAt"].includes(k)
     );
+    const isStaleProvisioning =
+      defaultOnly && d["plan"] === "free" && d["banned"] !== true && d["admin"] !== true;
+    if (!isStaleProvisioning) {
+      throw new ApiError(
+        "failed-precondition",
+        "Pairing must be confirmed from the child device app, not from a parent account."
+      );
+    }
+    await db().doc(`users/${uid}`).delete();
   }
 
   // Idempotent retry path: claims may have failed last time.
@@ -1578,7 +1594,22 @@ export const adminSetPlan: Handler = async (_env, caller, data) => {
 
 /** Lightweight identity probe — provisions/refreshes the parent profile. */
 export const profile: Handler = async (_env, caller, _data) => {
-  const snap = await db().doc(`users/${caller.uid}`).get();
+  const ref = db().doc(`users/${caller.uid}`);
+  const snap = await ref.get();
+  // Provision parents on first dashboard sign-in (replaces the lazy
+  // provisioning that used to live in verifyCaller — that version also
+  // captured unpaired child devices and blocked confirmPairing).
+  if (caller.kind !== "device" && !snap.exists) {
+    await ref.set(
+      {
+        role: "parent",
+        plan: "free",
+        createdAt: FieldValue.serverTimestamp(),
+        lastSeenAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
+  }
   return {
     uid: caller.uid,
     role: caller.kind === "device" ? "device" : (snap.get("role") ?? "parent"),

@@ -254,22 +254,15 @@ export async function verifyCaller(req: Request): Promise<Caller> {
     };
   }
 
-  // Parent path: lazy profile provisioning + ban gate (single read).
+  // Parent path: ban gate on every request. NOTE: do NOT create the profile
+  // here — this path also serves UNPAIRED anonymous child devices (before
+  // confirmPairing sets their deviceRole claims), and writing role:"parent"
+  // for them would trip confirmPairing's "pair from the child app" guard.
+  // Real parents get provisioned by the `profile` endpoint after dashboard
+  // sign-in; everyone else falls back to safe defaults (free plan).
   const ref = db().doc(`users/${uid}`);
   const snap = await ref.get();
-  if (!snap.exists) {
-    await ref.set(
-      {
-        role: "parent",
-        plan: "free",
-        createdAt: Timestamp.now(),
-        lastSeenAt: Timestamp.now(),
-      },
-      { merge: true }
-    );
-    return { uid, token: decoded, kind: "parent", appChecked };
-  }
-  if (snap.get("banned") === true) {
+  if (snap.exists && snap.get("banned") === true) {
     throw new ApiError(
       "permission-denied",
       "This account is suspended. Contact support to appeal."
