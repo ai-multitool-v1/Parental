@@ -59,6 +59,9 @@ jobs:
 
       - name: Deploy Firestore rules
         if: steps.sa.outputs.configured == 'true'
+        defaults:
+          run:
+            working-directory: parental-control/firebase
         env:
           FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
           PROJECT_ID: parental-control-31fb5
