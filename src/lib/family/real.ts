@@ -114,7 +114,19 @@ const NETWORK_MSG =
   "Server unreachable. Check your internet and try again.";
 
 export class RealApiError extends Error {
-  constructor(public code: string, message: string) {
+  /**
+   * true → the response body was a genuine Worker verdict
+   * ({error:{code,message}} shape) — retrying via the proxy cannot change
+   * the answer. false → the failure came from something BETWEEN the browser
+   * and the Worker (ISP transparent proxy / Cloudflare edge hiccup serving
+   * plain-text or foreign-JSON errors like "404 Not Found" / "forbidden"
+   * with an HTTP status) — the same-origin proxy fallback CAN still succeed.
+   */
+  constructor(
+    public code: string,
+    message: string,
+    public fromWorker = false
+  ) {
     super(message);
   }
 }
@@ -122,7 +134,7 @@ export class RealApiError extends Error {
 /** Thrown when the TCP/TLS/DNS layer itself fails (fetch/abort). */
 class NetworkUnreachable extends RealApiError {
   constructor() {
-    super("network", NETWORK_MSG);
+    super("network", NETWORK_MSG, false);
   }
 }
 
@@ -160,9 +172,16 @@ async function postJson(
   }
   if (!res.ok || body["ok"] !== true) {
     const err = body["error"] as { code?: string; message?: string } | undefined;
+    // Genuine Worker verdict = {error:{code,message}} object. Anything else
+    // (ISP/DPI JSON block pages like {"error":"forbidden"}, Cloudflare edge
+    // JSON, empty bodies) is platform garbage — mark it NOT fromWorker so
+    // callSecure's proxy fallback gets a chance to succeed.
+    const genuine =
+      !!err && typeof err === "object" && typeof err.code === "string";
     throw new RealApiError(
-      err?.code ?? "internal",
-      err?.message ?? `Request failed (HTTP ${res.status}).`
+      genuine ? err!.code! : "internal",
+      err?.message ?? `Request failed (HTTP ${res.status}).`,
+      genuine
     );
   }
   return (body["data"] ?? {}) as Record<string, unknown>;
@@ -191,10 +210,19 @@ export async function callSecure(
   const direct = `${apiBase()}/api/secure/${name}`;
   const proxy = `/api/secure/${name}`;
 
+  // Transient = network-layer failure OR an HTTP-level response that is NOT
+  // a genuine Worker verdict (ISP block pages / Cloudflare edge garbage now
+  // also arrive with HTTP statuses, not just as fetch exceptions). Genuine
+  // verdicts (401 unauthenticated, 403 permission-denied, 404 unknown
+  // endpoint, 429 rate-limit…) are final — the proxy would answer the same.
+  const transient = (e: unknown): boolean =>
+    e instanceof NetworkUnreachable ||
+    (e instanceof RealApiError && !e.fromWorker);
+
   try {
     return await postJson(direct, token, data, DIRECT_TIMEOUT_MS);
   } catch (e1) {
-    if (!(e1 instanceof NetworkUnreachable)) throw e1;
+    if (!transient(e1)) throw e1;
     if (typeof console !== "undefined") console.warn(`[secure] direct call failed (${name}), retrying…`);
   }
 
@@ -202,7 +230,7 @@ export async function callSecure(
   try {
     return await postJson(direct, token, data, DIRECT_TIMEOUT_MS);
   } catch (e2) {
-    if (!(e2 instanceof NetworkUnreachable)) throw e2;
+    if (!transient(e2)) throw e2;
     if (typeof console !== "undefined") console.warn(`[secure] direct retry failed (${name}), trying same-origin proxy…`);
   }
 
