@@ -245,29 +245,33 @@ fun SettingsScreen(onBack: () -> Unit, onUnpaired: () -> Unit) {
                 }
             }
 
-            // Hide app icon — official Device Owner capability (API 28+).
-            if (managementMode == ManagementMode.DEVICE_OWNER || managementMode == ManagementMode.PROFILE_OWNER) {
-                Spacer(Modifier.height(8.dp))
-                Card(Modifier.fillMaxWidth()) {
-                    Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text(stringResource(R.string.settings_hide_icon), fontWeight = FontWeight.SemiBold)
-                            Text(
-                                stringResource(R.string.settings_hide_icon_note),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        Switch(
-                            checked = iconHidden,
-                            onCheckedChange = { wantHidden ->
-                                if (wantHidden) showHideIconConfirm = true else {
-                                    ServiceLocator.devicePolicyWrapper.setApplicationHidden(context.packageName, false)
-                                    iconHidden = false
-                                }
-                            },
+            // Hide app icon — launcher-alias hiding works on EVERY device
+            // (no Device Owner enrollment needed), and the *#*#1111#*#* dial
+            // code stays functional because the app itself keeps running.
+            // (Previously gated behind DEVICE_OWNER — the toggle was invisible
+            // for normal installs, i.e. "apps icon hide toggle kaj kore na".)
+            Spacer(Modifier.height(8.dp))
+            Card(Modifier.fillMaxWidth()) {
+                Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(stringResource(R.string.settings_hide_icon), fontWeight = FontWeight.SemiBold)
+                        Text(
+                            stringResource(R.string.settings_hide_icon_note),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
+                    Switch(
+                        checked = iconHidden,
+                        onCheckedChange = { wantHidden ->
+                            if (wantHidden) showHideIconConfirm = true else {
+                                // unhideSelf() covers BOTH the alias path
+                                // and legacy DPM-hidden state.
+                                ServiceLocator.devicePolicyWrapper.unhideSelf()
+                                iconHidden = false
+                            }
+                        },
+                    )
                 }
             }
 
@@ -382,8 +386,8 @@ fun SettingsScreen(onBack: () -> Unit, onUnpaired: () -> Unit) {
             confirmButton = {
                 TextButton(onClick = {
                     showHideIconConfirm = false
-                    val r = ServiceLocator.devicePolicyWrapper.setApplicationHidden(context.packageName, true)
-                    iconHidden = r == org.setbd.parentcontrol.management.EnforcementResult.Supported
+                    // Alias-based self-hide: reliable + dial code keeps working.
+                    iconHidden = ServiceLocator.devicePolicyWrapper.setSelfHidden(true)
                 }) { Text(stringResource(R.string.consent_allow)) }
             },
             dismissButton = {

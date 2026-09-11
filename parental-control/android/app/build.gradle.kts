@@ -26,8 +26,8 @@ android {
         // instead of crashing or being bypassed on older devices.
         minSdk = 21
         targetSdk = 34
-        versionCode = 5
-        versionName = "1.3.1"
+        versionCode = 8
+        versionName = "1.4.3"
 
         // FCM default notification channel (parent messages).
         resValue("string", "default_notification_channel_id", "channel_parent_messages")

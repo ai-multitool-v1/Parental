@@ -20,7 +20,13 @@ const securityHeaders = [
       "img-src 'self' data: blob:",
       "font-src 'self' data:",
       "media-src 'self' blob: mediastream:",
-      "connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://*.cloudfunctions.net https://firebaseinstallations.googleapis.com",
+      // connect-src MUST include the Worker API base — the dashboard calls
+      // {NEXT_PUBLIC_SECURE_API_BASE}/api/secure/* directly from the browser
+      // (real.ts callSecure). Without it EVERY direct call dies instantly with
+      // "Refused to connect … violates the document's Content Security Policy"
+      // and everything crawls through the same-origin proxy (7-8 s per call).
+      // R2 presigned download URLs + Firebase Auth token endpoints included.
+      "connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://*.cloudfunctions.net https://firebaseinstallations.googleapis.com https://*.workers.dev https://*.r2.dev https://securetoken.googleapis.com",
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",

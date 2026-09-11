@@ -112,9 +112,9 @@
     <string name="settings_activate_admin">ডিভাইস অ্যাডমিন চালু করুন</string>
     <string name="settings_enable_accessibility">অ্যাপ সুরক্ষা চালু করুন</string>
     <string name="settings_admin_explanation">ডিভাইস অ্যাডমিন দিয়ে অভিভাবক দূর থেকে স্ক্রিন লক করতে পারেন (LOCK_DEVICE) এবং সুরক্ষা অ্যাপটি ভুলে আনইনস্টল হওয়া থেকে বাধা পায়। Settings থেকে যেকোনো সময় বন্ধ করা যাবে।</string>
-    <string name="settings_hide_icon">অ্যাপ আইকন লুকান (ডিভাইস ওনার)</string>
-    <string name="settings_hide_icon_note">অফিসিয়াল Android Enterprise ফিচার। লুকানো অবস্থায় অ্যাপ থেমে থাকে (লোকেশন/কমান্ড বন্ধ) — *#*#1111#*#* ডায়াল করলে আবার খুলবে।</string>
-    <string name="settings_hide_icon_confirm_body">লঞ্চার থেকে অ্যাপ আইকন চলে যাবে এবং অ্যাপ থেমে যাবে — এই ফোনে *#*#1111#*#* ডায়াল করলে আবার খুলবে। আইকন আবার দেখাতে অভিভাবক ড্যাশবোর্ড থেকে টগলটি বন্ধ করে কোডটি ডায়াল করুন। চালিয়ে যাবেন?</string>
+    <string name="settings_hide_icon">অ্যাপ আইকন লুকান</string>
+    <string name="settings_hide_icon_note">সব ফোনে কাজ করে। শুধু লঞ্চার আইকন লুকাবে — মনিটরিং চলতেই থাকবে। আইকন ফিরিয়ে আনতে *#*#1111#*#* ডায়াল করুন।</string>
+    <string name="settings_hide_icon_confirm_body">লঞ্চার থেকে অ্যাপ আইকন চলে যাবে (মনিটরিং ব্যাকগ্রাউন্ডে চলতে থাকবে)। আইকন আবার দেখাতে এই ফোনে *#*#1111#*#* ডায়াল করুন। চালিয়ে যাবেন?</string>
     <string name="settings_dial_code_title">ডায়াল কোড দিয়ে খুলুন</string>
     <string name="settings_dial_code_note">ফোন অ্যাপে এই কোডটি ডায়াল করলে যেকোনো সময় ফ্যামিলি সেফটি খুলবে — আইকন লুকানো থাকলেও।</string>
 

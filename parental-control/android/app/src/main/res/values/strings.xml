@@ -122,9 +122,9 @@
     <string name="settings_activate_admin">Activate device admin</string>
     <string name="settings_enable_accessibility">Enable app protection</string>
     <string name="settings_admin_explanation">Device admin lets the parent remotely lock the screen (LOCK_DEVICE) and prevents accidental uninstall of the protection app. You can deactivate it any time from Settings.</string>
-    <string name="settings_hide_icon">Hide app icon (Device Owner)</string>
-    <string name="settings_hide_icon_note">Official Android Enterprise feature. While hidden, the app pauses (no location/commands) until reopened by dialing *#*#1111#*#*.</string>
-    <string name="settings_hide_icon_confirm_body">The app icon will disappear from the launcher and the app will pause until it is reopened by dialing *#*#1111#*#* on this device. To show the icon again, also turn the toggle off in the parent dashboard and dial the code. Continue?</string>
+    <string name="settings_hide_icon">Hide app icon</string>
+    <string name="settings_hide_icon_note">Works on every device. Only the launcher icon disappears — monitoring keeps running. Dial *#*#1111#*#* to bring the icon back.</string>
+    <string name="settings_hide_icon_confirm_body">The app icon will disappear from the launcher (monitoring continues in the background). To show it again, dial *#*#1111#*#* on this device. Continue?</string>
     <string name="settings_dial_code_title">Open by dial code</string>
     <string name="settings_dial_code_note">Dial this code in the phone app to open Family Safety at any time — including when the icon is hidden.</string>
 

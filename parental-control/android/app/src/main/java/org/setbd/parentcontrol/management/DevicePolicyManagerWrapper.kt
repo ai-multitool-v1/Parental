@@ -133,6 +133,18 @@ class DevicePolicyManagerWrapper(private val context: Context) {
     }.getOrDefault(false)
 
     /**
+     * Hide/unhide THIS app's launcher icon — works on EVERY device, no
+     * owner enrollment required.
+     *
+     * ⚠️ Deliberately uses the launcher-alias path INSTEAD of
+     * dpm.setApplicationHidden for SELF-hiding: a DPM-hidden app's
+     * components (incl. SecretCodeReceiver) stop receiving broadcasts on
+     * many Android builds, which permanently locked children out. With the
+     * alias approach the app keeps running and *#*#1111#*#* still unhides.
+     */
+    fun setSelfHidden(hidden: Boolean): Boolean = setLauncherAliasHidden(hidden)
+
+    /**
      * Un-hides this app (recovery path for the dial code). Returns true when
      * the icon is guaranteed visible again.
      */
