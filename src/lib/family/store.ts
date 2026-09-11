@@ -53,10 +53,12 @@ import {
   realDeviceData,
   realBackupGetDownloadUrl,
   realBackupGetKey,
+  firebaseApp,
   RealApiError,
   type RealDeviceDoc,
   type RealProfile,
 } from "./real";
+import { doc, getFirestore, serverTimestamp, updateDoc } from "firebase/firestore";
 
 const COMMAND_TTL = 5 * 60_000;
 const CONSENT_TTL = 60_000;
@@ -1396,6 +1398,22 @@ export const useFamily = create<Store>((set, get) => {
         ),
       }));
       addAudit({ actorRole: "parent", action: "SOS_ACKNOWLEDGED", result: "EXECUTED", detail: "অভিভাবক alert দেখেছেন" });
+      // REAL mode: persist the acknowledgement to Firestore so the child's
+      // escalation loop stops and the event shows acknowledged on every
+      // refresh (rules: paired parent may set acknowledged/At/By only).
+      if (isRealMode()) {
+        const deviceId = get().device.id;
+        const parentUid = get().parent?.uid;
+        if (deviceId && deviceId !== DEVICE_UNPAIRED_ID && parentUid) {
+          updateDoc(doc(getFirestore(firebaseApp()), "devices", deviceId, "emergencyEvents", id), {
+            acknowledged: true,
+            acknowledgedAt: serverTimestamp(),
+            acknowledgedBy: parentUid,
+          }).catch(() => {
+            /* best-effort — the local state above is already updated */
+          });
+        }
+      }
     },
 
     /* ---------------- policy ---------------- */

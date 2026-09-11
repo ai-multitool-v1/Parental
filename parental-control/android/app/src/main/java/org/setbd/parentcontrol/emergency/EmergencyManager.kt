@@ -158,6 +158,25 @@ class EmergencyManager(private val context: Context) {
             if (ServiceLocator.appState.safetyCheckCommandId.value == commandId) {
                 ServiceLocator.appState.clearSafetyCheck()
                 writeSafetyCheckResult(commandId, "NO_RESPONSE", parentUid)
+                // Surface the failed check-in on the parent's EMERGENCY list —
+                // without this the dashboard emergency view (fed from
+                // emergencyEvents) never shows unanswered safety checks.
+                runCatching {
+                    firestore.collection("devices").document(ServiceLocator.deviceId)
+                        .collection("emergencyEvents")
+                        .add(
+                            mapOf(
+                                "type" to "SAFETY_CHECK_FAIL",
+                                "deviceId" to ServiceLocator.deviceId,
+                                "childUid" to ServiceLocator.auth.childUid.value,
+                                "commandId" to commandId,
+                                "timestamp" to FieldValue.serverTimestamp(),
+                                "batteryPercent" to ServiceLocator.deviceStatusMonitor.currentSnapshot().batteryPercent,
+                                "networkType" to ServiceLocator.deviceStatusMonitor.currentSnapshot().networkType,
+                                "acknowledged" to false,
+                            )
+                        ).await()
+                }
             }
         }
     }
