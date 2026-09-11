@@ -70,10 +70,11 @@ jobs:
           SA="$RUNNER_TEMP/service-account.json"
           printf '%s' "$FIREBASE_SERVICE_ACCOUNT_JSON" > "$SA"
           export GOOGLE_APPLICATION_CREDENTIALS="$SA"
-          npx --yes firebase-tools@latest deploy \
-            --only firestore:rules \
-            --project "$PROJECT_ID" \
-            --force --non-interactive
+          # firebase-tools' serviceusage preflight needs an extra IAM role the
+          # deploy SA does not have — use the Admin SDK SecurityRules API
+          # (firebaserules.googleapis.com directly, no preflight).
+          npm install --no-save --no-audit --no-fund firebase-admin@12
+          node deploy-rules.js firestore.rules "$PROJECT_ID"
           rm -f "$SA"
           echo "Firestore rules deployed to project $PROJECT_ID"
 
