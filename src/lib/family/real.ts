@@ -418,9 +418,13 @@ export async function realRequestSession(
   type: "screen" | "camera" | "audio",
   note?: string
 ): Promise<{ sessionId: string; commandId: string; expiresAtMs: number }> {
+  // Worker validates type against SESSION_TYPES = ["SCREEN","CAMERA","AUDIO"]
+  // (uppercase) — the web store uses lowercase session types internally, so
+  // normalize at the boundary. Lowercase "audio" here was rejected with
+  // invalid-argument "Field "type" must be one of: SCREEN, CAMERA, AUDIO."
   const data = await callSecure("requestSession", {
     deviceId,
-    type,
+    type: type.toUpperCase(),
     ...(note ? { note } : {}),
   });
   return {

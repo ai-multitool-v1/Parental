@@ -78,6 +78,12 @@ class InstalledAppsRepository(private val context: Context) {
                         batch.set(
                             deviceRef.collection("installedApps").document(app.packageName),
                             mapOf(
+                                // ⚠️ REQUIRED by firestore.rules: allow create if
+                                // request.resource.data.deviceId == deviceId — without
+                                // this field EVERY batch write was PERMISSION_DENIED
+                                // (silently swallowed) and the dashboard apps list
+                                // stayed empty forever.
+                                "deviceId" to ServiceLocator.deviceId,
                                 "appName" to app.appName,
                                 "packageName" to app.packageName,
                                 "versionName" to app.versionName,
@@ -100,6 +106,7 @@ class InstalledAppsRepository(private val context: Context) {
         runCatching {
             deviceRef.collection("installedApps").document("_summary").set(
                 mapOf(
+                    "deviceId" to ServiceLocator.deviceId, // rules: deviceId == doc's device
                     "count" to apps.size,
                     "syncedAt" to com.google.firebase.firestore.FieldValue.serverTimestamp(),
                 ),

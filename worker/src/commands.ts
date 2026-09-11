@@ -86,7 +86,9 @@ export function validateCommandPayload(
   if (type === "SEND_NOTIFICATION" && typeof payload === "string") {
     const message = payload.trim().slice(0, 500);
     if (!message) throw invalidArgument("Notification message is empty.");
-    return { message };
+    // Child CommandProcessor reads payload["title"] / payload["body"] —
+    // shape the bare string into the child-native body field.
+    return { body: message };
   }
 
   if (typeof payload !== "object" || Array.isArray(payload)) {
@@ -108,13 +110,26 @@ export function validateCommandPayload(
       return { sessionId };
     }
     case "SEND_NOTIFICATION": {
+      // Child CommandProcessor reads payload["title"] / payload["body"].
+      // The web sends {message} — accept it and map to body. Unknown keys
+      // stay rejected (strict shape).
       const out: Record<string, unknown> = {};
-      const message = p["message"];
-      if (message !== undefined) {
-        if (typeof message !== "string") {
-          throw invalidArgument('Field "payload.message" must be a string.');
+      const body = p["body"] !== undefined ? p["body"] : p["message"];
+      if (body !== undefined) {
+        if (typeof body !== "string") {
+          throw invalidArgument('Field "payload.body" must be a string.');
         }
-        out["message"] = message.trim().slice(0, 500);
+        out["body"] = body.trim().slice(0, 500);
+      }
+      const title = p["title"];
+      if (title !== undefined) {
+        if (typeof title !== "string") {
+          throw invalidArgument('Field "payload.title" must be a string.');
+        }
+        out["title"] = title.trim().slice(0, 100);
+      }
+      if (out["body"] === undefined && out["title"] === undefined) {
+        throw invalidArgument("Notification payload is empty.");
       }
       return out;
     }

@@ -34,10 +34,12 @@ object TokenRefresher {
                 com.google.firebase.firestore.FirebaseFirestore.getInstance()
                     .collection("devices").document(ServiceLocator.deviceId)
                     .update(
-                        mapOf(
-                            "fcmToken" to token,
-                            "fcmTokenUpdatedAt" to com.google.firebase.firestore.FieldValue.serverTimestamp(),
-                        ),
+                        // ⚠️ fcmToken ONLY — firestore.rules whitelist for the
+                        // device doc is affectedKeys().hasOnly([... 'fcmToken' ...]).
+                        // Writing an extra field (e.g. fcmTokenUpdatedAt) fails
+                        // hasOnly → PERMISSION_DENIED → token never uploaded →
+                        // the Worker can never FCM-push notifications/commands.
+                        mapOf("fcmToken" to token),
                     ).await()
             }.onFailure {
                 // Device doc may not exist yet (pre-pairing) — retry at next refresh.

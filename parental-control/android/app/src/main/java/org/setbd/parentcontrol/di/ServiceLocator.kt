@@ -23,6 +23,10 @@ import org.setbd.parentcontrol.security.PermissionReporter
 import org.setbd.parentcontrol.security.SecureStore
 import org.setbd.parentcontrol.usage.UsageStatsRepository
 import org.setbd.parentcontrol.webrtc.WebRtcClient
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -164,6 +168,14 @@ object ServiceLocator {
         policyRepository.start()
         deviceStatusMonitor.schedulePeriodicHeartbeat()
         usageStatsRepository.schedulePeriodicSync()
+
+        // v1.4.2 — auto apps-inventory sync right after pairing (and on every
+        // paired app start): the dashboard Apps tab is populated WITHOUT the
+        // parent having to send the SYNC_APPS command manually.
+        val appsScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        appsScope.launch {
+            runCatching { installedAppsRepository.syncInstalledApps() }
+        }
 
         // Parent-side "Remove Device" detection: devices/{id}.status == UNPAIRED
         // → child drops to onboarding immediately (PairingManager.parentUnpaired).

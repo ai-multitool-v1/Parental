@@ -164,10 +164,13 @@ class PolicyRepository(private val context: Context) {
         applyDeviceSettings(policy)
 
         // Observability for the dashboard ("policy v3 applied").
+        // ⚠️ Field name MUST match the firestore.rules device-doc whitelist
+        // ('policyVersionAcknowledged') — writing "policyVersion" failed
+        // hasOnly() → PERMISSION_DENIED (silently swallowed below).
         scope.launch {
             runCatching {
                 firestore.collection("devices").document(ServiceLocator.deviceId)
-                    .set(mapOf("policyVersion" to policy.version), SetOptions.merge()).await()
+                    .set(mapOf("policyVersionAcknowledged" to policy.version), SetOptions.merge()).await()
             }
         }
         return policy.version
