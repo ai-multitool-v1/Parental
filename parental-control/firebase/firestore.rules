@@ -189,6 +189,31 @@ service cloud.firestore {
         (!affectedKeys().hasAny(['fcmToken']) ||
           request.resource.data.fcmToken is string);
 
+      /* ───────────── devices/{id}/status — heartbeat snapshot ──────── */
+      // Written by the PAIRED DEVICE only (DeviceStatusMonitor heartbeat:
+      // battery/network/appVersion). Read by the paired parent (dashboard
+      // online card + battery) and the device itself. v1.3.2 FIX: this
+      // subcollection previously fell through to the deny-all catch-all —
+      // every child heartbeat failed with permission-denied, so the
+      // dashboard showed the device forever offline with empty telemetry.
+      match /status/{statusId} {
+        allow read: if parentOfDevice() || childOfDevice();
+        allow create, update: if childOfDevice();
+        allow delete: if false; // snapshots rotate via retention only
+      }
+
+      /* ───────── devices/{id}/permissions — permission snapshot ────── */
+      // Written by the PAIRED DEVICE only (PermissionReporter: runtime
+      // permission + accessibility/usage state). Read by the paired parent
+      // (dashboard permission matrix). Same catch-all gap as /status —
+      // without this block "permissions granted on child, dashboard shows
+      // nothing" is exactly the expected behavior.
+      match /permissions/{permissionId} {
+        allow read: if parentOfDevice() || childOfDevice();
+        allow create, update: if childOfDevice();
+        allow delete: if false;
+      }
+
       /* ───────────── devices/{id}/parents — pairing links ─────────── */
       match /parents/{parentUid} {
         // Read: that parent (to verify its own link), any parent of the

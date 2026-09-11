@@ -1,0 +1,84 @@
+# Deploy Firestore Security Rules — keeps rules in sync with the code
+#
+# • Runs on every push that touches parental-control/firebase/firestore.rules
+#   (and manually via workflow_dispatch).
+# • Uses the SAME FIREBASE_SERVICE_ACCOUNT_JSON repo secret as the Worker
+#   deploy (Firebase console → Project settings → Service accounts →
+#   Generate new private key — pasted as a repo secret, never committed).
+# • Why this exists (v1.3.2 incident): devices/{id}/status and
+#   devices/{id}/permissions had NO rule match blocks and fell into the
+#   deny-all catch-all — child heartbeats + permission snapshots were
+#   denied, so the dashboard showed the paired device but with zero
+#   telemetry and no permissions. Rules changes MUST reach production or
+#   the web dashboard and child app drift apart silently.
+#
+# Required repo SECRETS:
+#   FIREBASE_SERVICE_ACCOUNT_JSON  (already required by worker-deploy.yml)
+#
+# Develop By Silent Exploit Team Bd · Powered By AI MultiTool
+
+name: Deploy Firestore Rules
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "parental-control/firebase/firestore.rules"
+      - ".github/workflows/firebase-rules-deploy.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: firestore-rules-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  deploy-rules:
+    name: Deploy firestore.rules
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Check Firebase service account secret
+        id: sa
+        env:
+          FB_SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+        run: |
+          if [ -z "$FB_SA" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Secret 'FIREBASE_SERVICE_ACCOUNT_JSON' is not set — skipping rules deploy. Add it via repo Settings → Secrets and variables → Actions."
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Deploy Firestore rules
+        if: steps.sa.outputs.configured == 'true'
+        env:
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+          PROJECT_ID: parental-control-31fb5
+        run: |
+          set -euo pipefail
+          SA="$RUNNER_TEMP/service-account.json"
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT_JSON" > "$SA"
+          export GOOGLE_APPLICATION_CREDENTIALS="$SA"
+          npx --yes firebase-tools@latest deploy \
+            --only firestore:rules \
+            --project "$PROJECT_ID" \
+            --force --non-interactive
+          rm -f "$SA"
+          echo "Firestore rules deployed to project $PROJECT_ID"
+
+      - name: Job summary
+        if: steps.sa.outputs.configured == 'true'
+        run: |
+          {
+            echo "## ✅ Firestore rules deployed"
+            echo ""
+            echo "Project: \`parental-control-31fb5\` — rules from \`parental-control/firebase/firestore.rules\`"
+          } >> "$GITHUB_STEP_SUMMARY"
