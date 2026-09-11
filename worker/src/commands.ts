@@ -214,6 +214,12 @@ export async function createAndDispatchCommand(
       payload: args.payload,
       status: "PENDING",
       createdBy: args.createdBy,
+      // ⚠️ The child CommandProcessor's parent-authorization gate reads
+      // data["issuedBy"] (legacy Cloud Functions shape) — a command doc with
+      // only "createdBy" was REJECTED as missing_issuedBy, which auto-declined
+      // EVERY parent action (apps sync, notifications, sessions, lock…).
+      // Write both names; "createdBy" stays for the dashboard UI.
+      issuedBy: args.createdBy,
       createdAt: FieldValue.serverTimestamp(),
       expiresAt,
       result: null,

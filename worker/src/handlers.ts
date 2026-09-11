@@ -678,7 +678,14 @@ export const requestSession: Handler = async (env, caller, data) => {
     deviceId,
     createdBy: uid,
     type: commandType,
-    payload: { sessionId },
+    // Consent dialog personalization — the child sees WHO is asking.
+    payload: {
+      sessionId,
+      parentName:
+        (typeof profile.get("name") === "string" &&
+          (profile.get("name") as string).trim()) ||
+        "Your parent",
+    },
   });
 
   await writeAudit({

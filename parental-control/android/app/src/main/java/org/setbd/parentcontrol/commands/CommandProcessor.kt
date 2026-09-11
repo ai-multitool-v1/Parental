@@ -175,8 +175,14 @@ class CommandProcessor(private val context: Context) {
             }
 
             // ---- 6) parent authorization ----------------------------------
+            // The Worker historically wrote the parent uid as "createdBy"
+            // while the legacy Cloud Functions shape used "issuedBy"/
+            // "parentUid" — a doc carrying only "createdBy" was rejected as
+            // missing_issuedBy and auto-declined EVERY parent action. Accept
+            // all three spellings (Worker now writes issuedBy + createdBy).
             val issuedBy = (data["issuedBy"] as? String)
                 ?: (data["parentUid"] as? String)
+                ?: (data["createdBy"] as? String)
                 ?: return@withLock reject(commandId, type, "missing_issuedBy", CommandResultStatus.REJECTED)
             val authorized = try {
                 firestore.collection("devices").document(ServiceLocator.deviceId)
