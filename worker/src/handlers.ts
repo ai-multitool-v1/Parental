@@ -1946,12 +1946,13 @@ export const unpairDevice: Handler = async (_env, caller, data) => {
   const ownerParentUid = typeof device["ownerParentUid"] === "string" ? (device["ownerParentUid"] as string) : null;
   const childUid = typeof device["childUid"] === "string" ? (device["childUid"] as string) : null;
 
-  if (caller.kind === "device") {
-    // A device may only unpair itself while it still carries the link.
-    if (!ownerParentUid) {
-      return { ok: true, deviceId, alreadyUnpaired: true };
-    }
-  } else {
+  // Idempotent: an already-unlinked doc (status UNPAIRED, no owner) returns
+  // success instead of a misleading permission-denied on double-click.
+  if (!ownerParentUid) {
+    return { ok: true, deviceId, alreadyUnpaired: true };
+  }
+
+  if (caller.kind !== "device") {
     const uid = caller.uid;
     const parentLink = await deviceRef.collection("parents").doc(uid).get();
     if (!parentLink.exists) {
