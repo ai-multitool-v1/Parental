@@ -34,6 +34,7 @@ import {
   requestSession,
   runSweep,
   sendParentNotification,
+  unpairDevice,
   type Handler,
 } from "./handlers";
 import {
@@ -73,6 +74,7 @@ const HANDLERS: Record<string, Handler> = {
   sendParentNotification,
   listDevices,
   setPolicy,
+  unpairDevice,
   backupSetPolicy,
   backupGetKey,
   backupCreateUploadUrl,

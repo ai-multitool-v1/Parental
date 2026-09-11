@@ -46,6 +46,7 @@ import {
   realGeneratePairingCode,
   realListDevices,
   realDispatchCommand,
+  realUnpairDevice,
   realRequestSession,
   realSetPolicy,
   realSetBackupPolicy,
@@ -185,6 +186,8 @@ type Store = FamilyState & {
   pairingError: string | null;
   pairDevice: (code: string) => boolean;
   unpairDevice: () => void;
+  /** লোকাল-অনলি রিসেট (demo mode + real unpair-এর server-confirm পরে ব্যবহৃত)। */
+  unpairDeviceLocal: () => void;
   /* command pipeline */
   dispatchCommand: (type: CommandType, payload?: string, extra?: Record<string, unknown>) => void;
   /* sessions */
@@ -986,6 +989,38 @@ export const useFamily = create<Store>((set, get) => {
       return true;
     },
     unpairDevice: () => {
+      const st = get();
+      // ── REAL mode: Worker unpairDevice আগে — সার্ভারের ownerParentUid লিঙ্ক
+      // না মুছলে ৫ সেকেন্ডের listDevices poll ডিভাইসটাকে আবার paired:true করে
+      // দিত (auto-rebind bug)। সার্ভার কল ব্যর্থ হলে লোকাল রিসেট করি না — নইলে
+      // UI-তে unpaired দেখাবে আর ৫ সেকেন্ড পরে আবার জুড়ে যাবে।
+      if (isRealMode() && st.parent) {
+        const deviceId = st.device.id;
+        if (deviceId && deviceId !== DEVICE_UNPAIRED_ID && st.device.paired) {
+          toast.info("ডিভাইস আন-পেয়ার করা হচ্ছে…");
+          realUnpairDevice(deviceId)
+            .then(() => {
+              // পরের poll-এ যেন "নতুন ডিভাইস" toast আবার না দেখায় +
+              // pending command wait পরিষ্কার হয়।
+              seenDeviceIds.delete(deviceId);
+              for (const [cid, v] of [...pendingRealCommands.entries()]) {
+                if (v.deviceId === deviceId) pendingRealCommands.delete(cid);
+              }
+              get().unpairDeviceLocal();
+              toast.success("ডিভাইসটি সফলভাবে আন-পেয়ার হয়েছে");
+            })
+            .catch((err: unknown) => {
+              addAudit({ actorRole: "parent", action: "DEVICE_UNPAIR", result: "FAILED", detail: err instanceof RealApiError ? err.message : "নেটওয়ার্ক সমস্যা" });
+              toast.error(`আন-পেয়ার হয়নি — ${err instanceof RealApiError ? err.message : "নেটওয়ার্ক সমস্যা"}। আবার চেষ্টা করুন।`);
+            });
+          return;
+        }
+      }
+      get().unpairDeviceLocal();
+    },
+
+    /** Demo-mode ও server-confirm-এর পরের লোকাল রিসেট — এক জায়গায়। */
+    unpairDeviceLocal: () => {
       set((s) => ({
         device: { ...s.device, paired: false, locked: false },
         sessions: s.sessions.map((x) => (x.state === "active" ? { ...x, state: "ended" as const, endedAt: Date.now() } : x)),

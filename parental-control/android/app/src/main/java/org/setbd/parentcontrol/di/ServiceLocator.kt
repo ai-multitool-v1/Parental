@@ -165,6 +165,10 @@ object ServiceLocator {
         deviceStatusMonitor.schedulePeriodicHeartbeat()
         usageStatsRepository.schedulePeriodicSync()
 
+        // Parent-side "Remove Device" detection: devices/{id}.status == UNPAIRED
+        // → child drops to onboarding immediately (PairingManager.parentUnpaired).
+        pairing.startParentUnpairWatcher()
+
         // v1.3.0 — backup pipeline: policy listener, observers, periodic
         // workers. The pipeline itself re-checks the triple gate (parent
         // policy + child consent + permission) before ANY content read.

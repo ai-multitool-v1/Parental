@@ -4,6 +4,8 @@ import android.content.Context
 import android.os.Build
 import com.google.firebase.FirebaseException
 import com.google.firebase.FirebaseNetworkException
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.ListenerRegistration
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -62,6 +64,13 @@ class PairingManager(
 
     private val _state = MutableStateFlow<PairingState>(PairingState.Idle)
     val state: StateFlow<PairingState> = _state
+
+    /** Parent dashboard থেকে "Remove Device" হলে true — MainActivity onboarding-এ ফেরত পাঠায়। */
+    private val _parentUnpaired = MutableStateFlow(false)
+    val parentUnpaired: StateFlow<Boolean> = _parentUnpaired
+
+    /** devices/{id} snapshot listener — parent-initiated unpair detect করে। */
+    private var unpairWatcher: ListenerRegistration? = null
 
     val isPaired: Boolean get() = ServiceLocator.secureStore.isPaired()
 
@@ -132,17 +141,29 @@ class PairingManager(
     }
 
     /**
-     * Unpair (Settings): clears the local pairing and asks the server side to
-     * flip the device doc (best-effort — the identity delete trigger is the
-     * authoritative cleanup when the child account is removed).
+     * Unpair (Settings): clears the local pairing, tells the SERVER to drop
+     * the parent↔device link (Worker `unpairDevice`, device path), then signs
+     * out. The server call MUST come before signOut — it needs a valid token,
+     * and without it the parent dashboard's 5 s listDevices poll would just
+     * re-bind the device (auto-rebind bug). Best-effort: an offline device
+     * still unpairs locally; the parent can always Remove Device from the
+     * dashboard side.
      */
     fun unpair() {
         val deviceId = ServiceLocator.deviceId
         ServiceLocator.secureStore.setPaired(false)
         scope.launch {
             runCatching {
+                SecureApi.call(
+                    "unpairDevice",
+                    mapOf("deviceId" to deviceId),
+                    forceRefreshToken = true,
+                )
+            }
+            runCatching {
                 ServiceLocator.policyRepository.stop()
             }
+            stopParentUnpairWatcher()
             auditLogger.log(
                 actorUid = auth.childUid.value,
                 action = AuditLogger.ACTION_UNPAIRED,
@@ -150,6 +171,49 @@ class PairingManager(
                 details = mapOf("by" to "child"),
             )
             auth.signOut()
+        }
+    }
+
+    /**
+     * Watches devices/{deviceId} while paired: when the parent removes the
+     * device from the dashboard (Worker unpairDevice → status:"UNPAIRED"),
+     * the child drops to onboarding immediately instead of silently keeping
+     * the old policy set until the next app restart.
+     * Started from ServiceLocator.onPaired().
+     */
+    fun startParentUnpairWatcher() {
+        if (unpairWatcher != null) return
+        unpairWatcher = FirebaseFirestore.getInstance()
+            .collection("devices")
+            .document(ServiceLocator.deviceId)
+            .addSnapshotListener { snap, err ->
+                if (err != null) return@addSnapshotListener
+                if (snap != null && snap.exists() &&
+                    snap.getString("status") == "UNPAIRED" &&
+                    ServiceLocator.secureStore.isPaired()
+                ) {
+                    handleParentUnpair()
+                }
+            }
+    }
+
+    fun stopParentUnpairWatcher() {
+        unpairWatcher?.remove()
+        unpairWatcher = null
+    }
+
+    private fun handleParentUnpair() {
+        stopParentUnpairWatcher()
+        ServiceLocator.secureStore.setPaired(false)
+        scope.launch {
+            runCatching { ServiceLocator.policyRepository.stop() }
+            auditLogger.log(
+                actorUid = auth.childUid.value,
+                action = AuditLogger.ACTION_UNPAIRED,
+                result = "INFO",
+                details = mapOf("by" to "parent"),
+            )
+            _parentUnpaired.value = true
         }
     }
 

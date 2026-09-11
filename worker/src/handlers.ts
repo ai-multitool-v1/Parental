@@ -1896,6 +1896,119 @@ export const setPolicy: Handler = async (_env, caller, data) => {
   return { ok: true, version };
 };
 
+/* ════════════════════════════════ unpairDevice ═══════════════════════════ */
+
+/**
+ * unpairDevice — REAL unpair (the dashboard "Remove Device" button and the
+ * child Settings unpair both land here). Reverses confirmPairing in ONE
+ * transaction:
+ *
+ *   1. devices/{id}                → status:"UNPAIRED", paired:false,
+ *                                    ownerParentUid:DELETE, unpairedAt:now
+ *                                    (ownerParentUid removal is the piece that
+ *                                    stops listDevices from ever returning the
+ *                                    device again — without it the 5s realtime
+ *                                    poll re-binds the "removed" device, which
+ *                                    is exactly the auto-rebind bug)
+ *   2. devices/{id}/parents/{uid}  → DELETED (the ONLY requireParent trust
+ *                                    artifact — must go or the parent could
+ *                                    still dispatch commands to an unpaired
+ *                                    device)
+ *   3. children/{childUid}         → parentUid/deviceId fields DELETED
+ *                                    (re-pairing re-creates them via merge)
+ *
+ * Caller paths:
+ *   - PARENT: body.deviceId required; must own devices/{id}/parents/{uid}.
+ *   - DEVICE: unpairs ITSELF (deviceId from verified claims; body ignored) —
+ *     the child Settings "Unpair" uses this so the parent's dashboard stops
+ *     showing the device instead of silently re-binding it every 5 s.
+ */
+export const unpairDevice: Handler = async (_env, caller, data) => {
+  assertAppCheck(caller);
+
+  let deviceId: string;
+  if (caller.kind === "device") {
+    if (!caller.deviceId) {
+      throw new ApiError("permission-denied", "Device identity lacks a deviceId claim.");
+    }
+    deviceId = caller.deviceId;
+  } else {
+    deviceId = requireDeviceId(data["deviceId"]);
+  }
+
+  const deviceRef = db().doc(`devices/${deviceId}`);
+  const deviceSnap = await deviceRef.get();
+  if (!deviceSnap.exists) {
+    throw new ApiError("not-found", "Device is not paired (or already removed).");
+  }
+  const device = deviceSnap.data() as Record<string, unknown>;
+
+  const ownerParentUid = typeof device["ownerParentUid"] === "string" ? (device["ownerParentUid"] as string) : null;
+  const childUid = typeof device["childUid"] === "string" ? (device["childUid"] as string) : null;
+
+  if (caller.kind === "device") {
+    // A device may only unpair itself while it still carries the link.
+    if (!ownerParentUid) {
+      return { ok: true, deviceId, alreadyUnpaired: true };
+    }
+  } else {
+    const uid = caller.uid;
+    const parentLink = await deviceRef.collection("parents").doc(uid).get();
+    if (!parentLink.exists) {
+      throw new ApiError(
+        "permission-denied",
+        "You are not the parent of this device."
+      );
+    }
+  }
+
+  await db().runTransaction(async (tx: FsTransaction) => {
+    // 1. Device doc: unlink from the parent + flag UNPAIRED (child's
+    //    refreshPairedFlag probe and the new child-side listener watch this).
+    tx.set(
+      deviceRef,
+      {
+        status: "UNPAIRED",
+        paired: false,
+        ...(ownerParentUid ? { ownerParentUid: FieldValue.delete() } : {}),
+        unpairedAt: FieldValue.serverTimestamp(),
+        lastSeenAt: device["lastSeenAt"] ?? FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
+    // 2. Parent trust link — delete (device caller: ownerParentUid is the uid).
+    if (ownerParentUid) {
+      tx.delete(deviceRef.collection("parents").doc(ownerParentUid));
+    }
+    // 3. Child linkage cleanup (re-pairing re-creates these fields).
+    if (childUid) {
+      tx.set(
+        db().doc(`children/${childUid}`),
+        {
+          parentUid: FieldValue.delete(),
+          deviceId: FieldValue.delete(),
+        },
+        { merge: true }
+      );
+    }
+  });
+
+  await writeAudit({
+    functionName: "unpairDevice",
+    actorUid: caller.uid,
+    actorType: caller.kind === "device" ? "DEVICE" : "PARENT",
+    deviceId,
+    action: "UNPAIR_DEVICE",
+    result: "ALLOWED",
+    details: {
+      by: caller.kind === "device" ? "child" : "parent",
+      ownerParentUid: ownerParentUid ?? null,
+    },
+  });
+
+  return { ok: true, deviceId, unpaired: true };
+};
+
 /* ════════════════════════════════ sweep (cron) ═══════════════════════════ */
 
 /**

@@ -31,6 +31,7 @@ const ALLOWED_ENDPOINTS = new Set([
   "sendParentNotification",
   "listDevices",
   "setPolicy",
+  "unpairDevice",
   "backupSetPolicy",
   "backupGetKey",
   "backupCreateUploadUrl",

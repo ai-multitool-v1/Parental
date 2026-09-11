@@ -194,6 +194,13 @@ private fun FamilySafetyApp(startOnPaired: Boolean, bedtimeRequested: Boolean) {
             )
         }
         composable("main") {
+            // Parent removed this device from the dashboard → drop to onboarding.
+            val parentUnpaired by ServiceLocator.pairing.parentUnpaired.collectAsState()
+            LaunchedEffect(parentUnpaired) {
+                if (parentUnpaired) {
+                    navController.navigate("onboarding") { popUpTo(0) { inclusive = true } }
+                }
+            }
             MainScreen(
                 onOpenSettings = { navController.navigate("settings") },
             )

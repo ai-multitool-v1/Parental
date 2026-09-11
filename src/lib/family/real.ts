@@ -349,6 +349,15 @@ export async function realListDevices(
   };
 }
 
+/**
+ * REAL unpair — Worker-এ parent↔device লিঙ্ক (ownerParentUid + parents/{uid}
+ * + children/{uid} linkage) মুছে দেয়। এটা না করলে ৫ সেকেন্ডের realtime poll
+ * আবার ডিভাইসটাকে বেঁধে ফেলে (auto-rebind bug)।
+ */
+export async function realUnpairDevice(deviceId: string): Promise<void> {
+  await callSecure("unpairDevice", { deviceId });
+}
+
 /** Dispatch a whitelisted command to a paired device. */
 export async function realDispatchCommand(
   deviceId: string,
