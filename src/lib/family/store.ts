@@ -628,8 +628,13 @@ export const useFamily = create<Store>((set, get) => {
               patchSession(entry.sessionId, { state: "ended", endedAt: c.completedAtMs ?? Date.now() });
             }
           }
-        } catch {
-          /* সাময়িক ব্যর্থতা — পরের টিকে আবার চেষ্টা হবে */
+        } catch (e) {
+          // সাময়িক ব্যর্থতা — পরের টিকে আবার চেষ্টা হবে। তবে console-এ লগ
+          // রাখি যাতে স্থায়ী ব্যর্থতা (proxy/allowlist/নেটওয়ার্ক) ধরা পড়ে।
+          console.warn(
+            "[realtime] listDevices poll failed:",
+            e instanceof Error ? e.message : e
+          );
         } finally {
           realtimeInFlight = false;
         }

@@ -29,6 +29,8 @@ const ALLOWED_ENDPOINTS = new Set([
   "requestSession",
   "endSession",
   "sendParentNotification",
+  "listDevices",
+  "setPolicy",
   "backupSetPolicy",
   "backupGetKey",
   "backupCreateUploadUrl",
