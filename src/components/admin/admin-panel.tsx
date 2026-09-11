@@ -12,7 +12,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   LayoutDashboard, Users, Activity, Smartphone, ScrollText, LogOut, Search,
-  ShieldAlert, Ban, CheckCircle2, RefreshCcw, ShieldCheck, Radio, UserX, Wifi, Crown, CircleMinus,
+  ShieldAlert, Ban, CheckCircle2, RefreshCcw, ShieldCheck, Radio, UserX, Wifi, Crown, CircleMinus, Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -25,7 +25,7 @@ import { useFamily } from "@/lib/family/store";
 import { fmtClock, fmtTime } from "@/lib/family/engine";
 import { CREDIT_LINE, DEVELOPER_CREDIT, POWERED_BY } from "@/lib/family/branding";
 import { cn } from "@/lib/utils";
-import type { AdminAuditEntry, AdminDevice, AdminUser } from "@/lib/family/admin-types";
+import type { AdminAuditEntry, AdminDevice, AdminUser, FirebaseAdminUser } from "@/lib/family/admin-types";
 
 type Tab = "overview" | "users" | "live" | "devices" | "audit";
 
@@ -78,7 +78,268 @@ function StatusBadges({ u }: { u: AdminUser }) {
 
 /* ------------------------------ Users tab --------------------------------- */
 
+function FirebaseUsersTable() {
+  const fbUsers = useAdminStore((s) => s.fbUsers);
+  const fbMode = useAdminStore((s) => s.fbMode);
+  const fbLoading = useAdminStore((s) => s.fbLoading);
+  const loadFirebaseUsers = useAdminStore((s) => s.loadFirebaseUsers);
+  const firebaseSetPlan = useAdminStore((s) => s.firebaseSetPlan);
+  const firebaseBanUser = useAdminStore((s) => s.firebaseBanUser);
+  const firebaseDeleteUser = useAdminStore((s) => s.firebaseDeleteUser);
+  const [q, setQ] = useState("");
+  const [banTarget, setBanTarget] = useState<FirebaseAdminUser | null>(null);
+  const [reason, setReason] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<FirebaseAdminUser | null>(null);
+  const [confirmText, setConfirmText] = useState("");
+  const [deleting, setDeleting] = useState(false);
+
+  useEffect(() => {
+    void loadFirebaseUsers();
+  }, [loadFirebaseUsers]);
+
+  if (fbMode === "unconfigured") {
+    return (
+      <div className="rounded-xl border-2 border-amber-400 bg-amber-50 dark:bg-amber-950/30 p-4 space-y-2">
+        <p className="font-semibold text-amber-800 dark:text-amber-300 flex items-center gap-2">
+          <ShieldAlert className="h-5 w-5" /> ফায়ারবেজ অ্যাকাউন্ট ভিউ কনফিগার হয়নি
+        </p>
+        <p className="text-sm text-amber-800/80 dark:text-amber-200/80">
+          Vercel environment variable <code className="rounded bg-amber-200/60 dark:bg-amber-900/60 px-1.5 py-0.5 font-mono text-xs">WORKER_ADMIN_SECRET</code> সেট করে
+          রিডিপ্লয় করলে এখানে আসল রেজিস্টার্ড ইউজার, ডিলিট ও প্রিমিয়াম টগল দেখা যাবে। (নিচের লোকাল রেজিস্ট্রি ডেমো-মোড ডেটা।)
+        </p>
+      </div>
+    );
+  }
+  if (fbMode === "error" && !fbLoading) {
+    return (
+      <div className="rounded-xl border-2 border-rose-300 bg-rose-50 dark:bg-rose-950/30 p-4 space-y-2">
+        <p className="font-semibold text-rose-700 dark:text-rose-300">ফায়ারবেজ অ্যাকাউন্ট লোড ব্যর্থ</p>
+        <Button size="sm" variant="outline" onClick={() => void loadFirebaseUsers()}>
+          <RefreshCcw className="h-3.5 w-3.5 mr-1" /> আবার চেষ্টা করুন
+        </Button>
+      </div>
+    );
+  }
+
+  const filtered = fbUsers.filter(
+    (u) =>
+      q === "" ||
+      u.email.toLowerCase().includes(q.toLowerCase()) ||
+      u.displayName.toLowerCase().includes(q.toLowerCase()) ||
+      u.uid.toLowerCase().includes(q.toLowerCase()),
+  );
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm text-muted-foreground">
+          <span className="font-semibold text-foreground">{fbUsers.length}</span> জন আসল ফায়ারবেজ অ্যাকাউন্ট — Auth + Firestore profile (plan/ban/ডিভাইস সংখ্যা)
+        </p>
+        <div className="flex items-center gap-2">
+          <div className="relative w-52">
+            <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="ইমেইল/নাম/UID…" className="pl-9 h-9" />
+          </div>
+          <Button size="sm" variant="outline" className="h-9" onClick={() => void loadFirebaseUsers()} disabled={fbLoading}>
+            <RefreshCcw className={cn("h-3.5 w-3.5", fbLoading && "animate-spin")} />
+          </Button>
+        </div>
+      </div>
+      <div className="overflow-x-auto rounded-lg border">
+        <table className="w-full text-sm min-w-[900px]">
+          <thead className="bg-muted/70">
+            <tr className="text-left text-xs text-muted-foreground">
+              <th className="px-3 py-2 font-medium">User ID (UID)</th>
+              <th className="px-3 py-2 font-medium">ইমেইল / নাম</th>
+              <th className="px-3 py-2 font-medium">তৈরি</th>
+              <th className="px-3 py-2 font-medium">সর্বশেষ লগইন</th>
+              <th className="px-3 py-2 font-medium">ডিভাইস</th>
+              <th className="px-3 py-2 font-medium">স্ট্যাটাস</th>
+              <th className="px-3 py-2 font-medium text-right">অ্যাকশন</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map((u) => (
+              <tr key={u.uid} className="border-t align-middle hover:bg-muted/40">
+                <td className="px-3 py-2.5 font-mono text-[11px]">{u.uid}</td>
+                <td className="px-3 py-2.5">
+                  <p className="font-medium whitespace-nowrap">{u.email || "—"}</p>
+                  {u.displayName && <p className="text-xs text-muted-foreground">{u.displayName}</p>}
+                </td>
+                <td className="px-3 py-2.5 text-xs whitespace-nowrap text-muted-foreground">
+                  {u.createdAtMs ? fmtTime(u.createdAtMs) : "—"}
+                </td>
+                <td className="px-3 py-2.5 text-xs whitespace-nowrap">
+                  {u.lastSignInMs ? fmtClock(u.lastSignInMs) : "—"}
+                </td>
+                <td className="px-3 py-2.5 tabular-nums">{u.deviceCount}</td>
+                <td className="px-3 py-2.5">
+                  <span className="inline-flex flex-wrap gap-1">
+                    {u.admin && <Badge variant="outline" className="border-emerald-500/50 text-emerald-600">ADMIN</Badge>}
+                    {u.banned ? (
+                      <Badge className="bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300 border-0">ব্যান</Badge>
+                    ) : (
+                      <Badge variant="secondary">সক্রিয়</Badge>
+                    )}
+                    {u.plan === "premium" ? (
+                      <Badge className="bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 border-0 gap-1">
+                        <Crown className="h-3 w-3" /> প্রিমিয়াম
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline" className="text-muted-foreground">ফ্রি</Badge>
+                    )}
+                  </span>
+                </td>
+                <td className="px-3 py-2.5">
+                  <div className="flex justify-end gap-1.5">
+                    {!u.admin && (
+                      u.plan === "premium" ? (
+                        <Button size="sm" variant="outline" className="h-7 px-2 text-xs" onClick={() => void firebaseSetPlan(u.uid, "free")}>
+                          <CircleMinus className="h-3.5 w-3.5 mr-1" /> ফ্রি
+                        </Button>
+                      ) : (
+                        <Button size="sm" variant="outline" className="h-7 px-2 text-xs border-amber-400 text-amber-700 dark:text-amber-400" onClick={() => void firebaseSetPlan(u.uid, "premium")}>
+                          <Crown className="h-3.5 w-3.5 mr-1" /> প্রিমিয়াম
+                        </Button>
+                      )
+                    )}
+                    {!u.admin && (
+                      u.banned ? (
+                        <Button size="sm" variant="outline" className="h-7 px-2 text-xs border-emerald-400 text-emerald-700 dark:text-emerald-400" onClick={() => void firebaseBanUser(u.uid, false, "")}>
+                          <CheckCircle2 className="h-3.5 w-3.5 mr-1" /> আনব্যান
+                        </Button>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 px-2 text-xs border-rose-300 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40"
+                          onClick={() => { setBanTarget(u); setReason(""); }}
+                        >
+                          <Ban className="h-3.5 w-3.5 mr-1" /> ব্যান
+                        </Button>
+                      )
+                    )}
+                    {!u.admin && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 px-2 text-xs border-rose-400 text-rose-600 hover:bg-rose-100 dark:hover:bg-rose-950/60"
+                        onClick={() => { setDeleteTarget(u); setConfirmText(""); }}
+                      >
+                        <Trash2 className="h-3.5 w-3.5 mr-1" /> ডিলিট
+                      </Button>
+                    )}
+                  </div>
+                </td>
+              </tr>
+            ))}
+            {filtered.length === 0 && !fbLoading && (
+              <tr><td colSpan={7} className="px-3 py-8 text-center text-muted-foreground">কোনো ফায়ারবেজ অ্যাকাউন্ট পাওয়া যায়নি</td></tr>
+            )}
+            {fbLoading && (
+              <tr><td colSpan={7} className="px-3 py-8 text-center text-muted-foreground">লোড হচ্ছে…</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* ---- ban dialog (firebase user) ---- */}
+      <Dialog open={!!banTarget} onOpenChange={(o) => !o && setBanTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-rose-600">
+              <Ban className="h-5 w-5" /> {banTarget?.email} ব্যান করবেন?
+            </DialogTitle>
+            <DialogDescription>
+              ব্যান করলে Auth refresh-token revoke হয় — ইউজার সাথে সাথে লগআউট হয়ে আর লগইন করতে পারবে না।
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="fb-ban-reason">কারণ (অডিট লগে সংরক্ষিত)</Label>
+            <Textarea id="fb-ban-reason" value={reason} onChange={(e) => setReason(e.target.value)} rows={3} placeholder="যেমন: প্ল্যাটফর্ম অপব্যবহার…" />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBanTarget(null)}>বাতিল</Button>
+            <Button
+              className="bg-rose-600 hover:bg-rose-700 text-white"
+              onClick={() => {
+                if (banTarget) void firebaseBanUser(banTarget.uid, true, reason.trim());
+                setBanTarget(null);
+              }}
+            >
+              ব্যান করুন
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ---- delete dialog (irreversible cascade) ---- */}
+      <Dialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-rose-600">
+              <Trash2 className="h-5 w-5" /> স্থায়ীভাবে ডিলিট করবেন?
+            </DialogTitle>
+            <DialogDescription>
+              <span className="font-semibold text-foreground">{deleteTarget?.email}</span> — এটি IRREVERSIBLE:
+              Firebase Auth অ্যাকাউন্ট, সব পেয়ার করা ডিভাইস (টেলিমেট্রি/কমান্ড/সেশন সহ), চাইল্ড Auth অ্যাকাউন্ট,
+              প্রোফাইল ডক ও pairing code — সব মুছে যাবে।
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="fb-delete-confirm">নিশ্চিত করতে ইমেইলটি লিখুন: <span className="font-mono">{deleteTarget?.email}</span></Label>
+            <Input id="fb-delete-confirm" value={confirmText} onChange={(e) => setConfirmText(e.target.value)} placeholder="ইমেইল টাইপ করুন…" />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>বাতিল</Button>
+            <Button
+              variant="destructive"
+              disabled={deleting || confirmText.trim().toLowerCase() !== (deleteTarget?.email ?? "").trim().toLowerCase()}
+              onClick={() => {
+                if (!deleteTarget) return;
+                setDeleting(true);
+                void firebaseDeleteUser(deleteTarget.uid).then((ok) => {
+                  setDeleting(false);
+                  if (ok) setDeleteTarget(null);
+                });
+              }}
+            >
+              {deleting ? "ডিলিট হচ্ছে…" : "স্থায়ীভাবে ডিলিট করুন"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
 function UsersTab() {
+  const [source, setSource] = useState<"firebase" | "local">("firebase");
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          size="sm"
+          variant={source === "firebase" ? "default" : "outline"}
+          className={source === "firebase" ? "bg-emerald-600 hover:bg-emerald-700 text-white" : ""}
+          onClick={() => setSource("firebase")}
+        >
+          <Users className="h-4 w-4 mr-1.5" /> ফায়ারবেজ অ্যাকাউন্ট (আসল)
+        </Button>
+        <Button
+          size="sm"
+          variant={source === "local" ? "default" : "outline"}
+          onClick={() => setSource("local")}
+        >
+          <LayoutDashboard className="h-4 w-4 mr-1.5" /> লোকাল রেজিস্ট্রি (ডেমো)
+        </Button>
+      </div>
+      {source === "firebase" ? <FirebaseUsersTable /> : <LocalUsersTable />}
+    </div>
+  );
+}
+
+function LocalUsersTable() {
   const users = useAdminStore((s) => s.users);
   const banUser = useAdminStore((s) => s.banUser);
   const unbanUser = useAdminStore((s) => s.unbanUser);

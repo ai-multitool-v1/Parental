@@ -1,5 +1,6 @@
 package org.setbd.parentcontrol.device
 
+import android.app.ActivityManager
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
@@ -7,6 +8,8 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.BatteryManager
 import android.os.Build
+import android.os.Environment
+import android.os.StatFs
 import androidx.work.BackoffPolicy
 import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
@@ -31,6 +34,13 @@ data class DeviceSnapshot(
     val networkType: String,          // "wifi" | "mobile" | "offline"
     val androidVersion: String = Build.VERSION.RELEASE,
     val appVersion: String = BuildConfig.VERSION_NAME,
+    // v1.4.2 — structured device identity (parent dashboard device-info card)
+    val model: String = Build.MODEL.take(48),
+    val manufacturer: String = Build.MANUFACTURER.take(32),
+    val totalRamMb: Long = 0,
+    val availableRamMb: Long = 0,
+    val totalStorageGb: Long = 0,
+    val availableStorageGb: Long = 0,
     val timestampMs: Long = System.currentTimeMillis(),
 )
 
@@ -54,11 +64,30 @@ class DeviceStatusMonitor(private val context: Context) {
     /** Reads the current snapshot without any side effects. */
     fun currentSnapshot(): DeviceSnapshot {
         val battery = batteryStatus()
+        val am = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+        val mem = ActivityManager.MemoryInfo().also { am?.getMemoryInfo(it) }
+        val storage = storageStatus()
         return DeviceSnapshot(
             batteryPercent = battery.first,
             charging = battery.second,
             networkType = networkType(),
+            totalRamMb = mem.totalMem / (1024 * 1024),
+            availableRamMb = mem.availMem / (1024 * 1024),
+            totalStorageGb = storage.first,
+            availableStorageGb = storage.second,
         )
+    }
+
+    /** Internal-data partition capacity in GB (rounded) — the "storage" a user knows. */
+    private fun storageStatus(): Pair<Long, Long> {
+        return try {
+            val stat = StatFs(Environment.getDataDirectory().path)
+            val totalGb = stat.totalBytes / (1024L * 1024L * 1024L)
+            val availGb = stat.availableBytes / (1024L * 1024L * 1024L)
+            totalGb to availGb
+        } catch (e: Exception) {
+            0L to 0L
+        }
     }
 
     /** Battery percent + charging flag from the sticky BATTERY_CHANGED intent. */
@@ -104,6 +133,13 @@ class DeviceStatusMonitor(private val context: Context) {
                         "networkType" to snap.networkType,
                         "androidVersion" to snap.androidVersion,
                         "appVersion" to snap.appVersion,
+                        // v1.4.2 — device identity + capacity (dashboard info card)
+                        "model" to snap.model,
+                        "manufacturer" to snap.manufacturer,
+                        "totalRamMb" to snap.totalRamMb,
+                        "availableRamMb" to snap.availableRamMb,
+                        "totalStorageGb" to snap.totalStorageGb,
+                        "availableStorageGb" to snap.availableStorageGb,
                         "reason" to reason,
                         "updatedAt" to com.google.firebase.firestore.FieldValue.serverTimestamp(),
                     ),

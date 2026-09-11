@@ -17,6 +17,8 @@ import type { Env } from "./env";
 import { ApiError, corsHeaders, errorResponse, json, preflight } from "./http";
 import { bindEnv, saInfo, verifyCaller, type Caller } from "./admin";
 import {
+  adminDeleteUser,
+  adminListUsers,
   adminSetBanState,
   adminSetPlan,
   backupCompleteUpload,
@@ -27,6 +29,7 @@ import {
   backupSetPolicy,
   commandResult,
   confirmPairing,
+  deviceData,
   dispatchCommand,
   endSession,
   generatePairingCode,
@@ -73,6 +76,7 @@ const HANDLERS: Record<string, Handler> = {
   endSession,
   sendParentNotification,
   listDevices,
+  deviceData,
   setPolicy,
   unpairDevice,
   backupSetPolicy,
@@ -83,7 +87,25 @@ const HANDLERS: Record<string, Handler> = {
   backupListForChild,
   adminSetBanState,
   adminSetPlan,
+  adminListUsers,
+  adminDeleteUser,
 };
+
+/** Endpoints callable with the shared server-to-server ADMIN_SECRET header. */
+const ADMIN_SECRET_ENDPOINTS = new Set([
+  "adminSetBanState",
+  "adminSetPlan",
+  "adminListUsers",
+  "adminDeleteUser",
+]);
+
+/** Constant-time string compare (no early exit on mismatch). */
+function secretMatches(a: string, b: string): boolean {
+  if (a.length === 0 || a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
 
 app.post("/api/secure/:name", async (c) => {
   bindEnv(c.env);
@@ -103,6 +125,23 @@ app.post("/api/secure/:name", async (c) => {
     throw new ApiError("not-found", `Unknown endpoint "${name}".`);
   }
 
+  // Admin console proxy (Next.js server → Worker): the shared ADMIN_SECRET
+  // grants the admin endpoints WITHOUT a Firebase ID token. The secret lives
+  // only in server envs (Cloudflare + Vercel), never in any client bundle.
+  let caller: Caller;
+  const adminSecret = process.env.ADMIN_SECRET ?? "";
+  const presented = c.req.header("x-admin-secret") ?? "";
+  if (ADMIN_SECRET_ENDPOINTS.has(name) && adminSecret && secretMatches(presented, adminSecret)) {
+    caller = {
+      uid: "admin:console",
+      token: { admin: true },
+      kind: "parent",
+      appChecked: false,
+    };
+  } else {
+    caller = await verifyCaller(c.req.raw);
+  }
+
   let body: Record<string, unknown> = {};
   try {
     const parsed = (await c.req.json()) as Record<string, unknown>;
@@ -115,7 +154,6 @@ app.post("/api/secure/:name", async (c) => {
     body = {};
   }
 
-  const caller: Caller = await verifyCaller(c.req.raw);
   const result = await handler(c.env, caller, body, c.req.raw);
   return json({ ok: true, data: result });
 });

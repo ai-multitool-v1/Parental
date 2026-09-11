@@ -32,6 +32,7 @@ import type {
   AdminLoginResult,
   AdminSession,
   AdminUser,
+  FirebaseAdminUser,
 } from "./admin-types";
 import type { UserPlan } from "./types";
 
@@ -116,6 +117,16 @@ interface AdminStore {
   isDeviceBanned: (deviceId: string) => boolean;
   /** stale লাইভ সেশন sweep (local mirror) */
   sweep: () => void;
+
+  /* ---- v1.4.2 REAL Firebase accounts (Worker admin endpoints via proxy) --- */
+  fbUsers: FirebaseAdminUser[];
+  /** "live" = WORKER_ADMIN_SECRET কনফিগার্ড (আসল ডেটা) · "unconfigured" = setup hint */
+  fbMode: "live" | "unconfigured" | "error";
+  fbLoading: boolean;
+  loadFirebaseUsers: () => Promise<void>;
+  firebaseDeleteUser: (uid: string) => Promise<boolean>;
+  firebaseSetPlan: (uid: string, plan: UserPlan) => Promise<void>;
+  firebaseBanUser: (uid: string, banned: boolean, reason: string) => Promise<void>;
 }
 
 export const useAdminStore = create<AdminStore>((set, get) => {
@@ -152,6 +163,9 @@ export const useAdminStore = create<AdminStore>((set, get) => {
     adminAudit: [],
     hydrating: false,
     lockoutUntil: null,
+    fbUsers: [],
+    fbMode: "live",
+    fbLoading: false,
 
     hydrate: async () => {
       set({ hydrating: true });
@@ -305,6 +319,102 @@ export const useAdminStore = create<AdminStore>((set, get) => {
             : x,
         ),
       }));
+    },
+
+    /* ---------------- v1.4.2 REAL Firebase account management ---------------- */
+    loadFirebaseUsers: async () => {
+      set({ fbLoading: true });
+      try {
+        const res = await fetch("/api/admin/firebase-users?maxResults=500", { cache: "no-store" });
+        const data = (await res.json()) as Record<string, unknown>;
+        if (res.status === 503 || data["configured"] === false) {
+          set({ fbMode: "unconfigured", fbUsers: [] });
+          return;
+        }
+        if (!res.ok || data["ok"] !== true) {
+          set({ fbMode: "error", fbUsers: [] });
+          return;
+        }
+        set({
+          fbMode: "live",
+          fbUsers: (data["users"] ?? []) as unknown as FirebaseAdminUser[],
+        });
+      } catch {
+        set({ fbMode: "error", fbUsers: [] });
+      } finally {
+        set({ fbLoading: false });
+      }
+    },
+
+    firebaseDeleteUser: async (uid) => {
+      try {
+        const res = await fetch("/api/admin/firebase-users", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "delete", uid }),
+        });
+        const data = (await res.json()) as Record<string, unknown>;
+        if (res.ok && data["ok"] === true) {
+          toast.success(
+            `অ্যাকাউন্ট ডিলিট হয়েছে (${String(data["devicesRemoved"] ?? 0)} ডিভাইস, ${String(data["childUsersRemoved"] ?? 0)} চাইল্ড অ্যাকাউন্ট সহ)`,
+          );
+          await get().loadFirebaseUsers();
+          return true;
+        }
+        toast.error(`ডিলিট ব্যর্থ (${res.status}) — সার্ভার লগ দেখুন`);
+        return false;
+      } catch {
+        toast.error("সার্ভারে পৌঁছানো যায়নি");
+        return false;
+      }
+    },
+
+    firebaseSetPlan: async (uid, plan) => {
+      const user = get().fbUsers.find((x) => x.uid === uid);
+      try {
+        const res = await fetch("/api/admin/firebase-users", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "plan", uid, plan }),
+        });
+        const data = (await res.json()) as Record<string, unknown>;
+        if (res.ok && data["ok"] === true) {
+          toast.success(
+            plan === "premium"
+              ? `${user?.email ?? uid} এখন প্রিমিয়াম — সব ফিচার আনলক`
+              : `${user?.email ?? uid}-কে ফ্রি প্ল্যানে নামানো হয়েছে`,
+          );
+          set((s) => ({
+            fbUsers: s.fbUsers.map((x) => (x.uid === uid ? { ...x, plan } : x)),
+          }));
+        } else {
+          toast.error(`প্ল্যান পরিবর্তন ব্যর্থ (${res.status})`);
+        }
+      } catch {
+        toast.error("সার্ভারে পৌঁছানো যায়নি");
+      }
+    },
+
+    firebaseBanUser: async (uid, banned, reason) => {
+      const user = get().fbUsers.find((x) => x.uid === uid);
+      try {
+        const res = await fetch("/api/admin/firebase-users", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "ban", uid, banned, reason }),
+        });
+        const data = (await res.json()) as Record<string, unknown>;
+        if (res.ok && data["ok"] === true) {
+          toast.success(banned ? `${user?.email ?? uid} ব্যান করা হয়েছে` : `${user?.email ?? uid} পুনরায় সক্রিয়`);
+          set((s) => ({
+            fbUsers: s.fbUsers.map((x) => (x.uid === uid ? { ...x, banned } : x)),
+          }));
+        } else {
+          toast.error(`অ্যাকশন ব্যর্থ (${res.status})`);
+        }
+      } catch {
+        toast.error("সার্ভারে পৌঁছানো যায়নি");
+      }
     },
   };
 });

@@ -8,6 +8,9 @@
  *     bytes, base64) — wraps every child's backup DEK (escrow).
  *   BACKUP_URL_SECRET              HMAC secret for the short-lived R2 proxy
  *     upload/download URLs the Worker issues to devices.
+ *   ADMIN_SECRET                   shared server-to-server secret for the
+ *     web admin console proxy (Next.js server → Worker). Grant admin
+ *     endpoints without a Firebase admin claim.
  *
  * VARS (wrangler.jsonc):
  *   ENFORCE_APP_CHECK, ALLOWED_ORIGINS, TURN_*, STUN_URLS (optional).
@@ -20,6 +23,7 @@ export interface Env {
   FIREBASE_SERVICE_ACCOUNT_JSON: string;
   BACKUP_KEK?: string;
   BACKUP_URL_SECRET?: string;
+  ADMIN_SECRET?: string;
 
   ENFORCE_APP_CHECK?: string;
   ALLOWED_ORIGINS?: string;

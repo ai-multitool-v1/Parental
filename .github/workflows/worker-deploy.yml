@@ -103,6 +103,7 @@ jobs:
           FB_SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
           KEK_IN: ${{ secrets.BACKUP_KEK }}
           URLS_IN: ${{ secrets.BACKUP_URL_SECRET }}
+          ADMIN_IN: ${{ secrets.ADMIN_SECRET }}
           RESYNC_SA: ${{ inputs.resync_firebase_sa || 'false' }}
         run: |
           set -euo pipefail
@@ -144,6 +145,19 @@ jobs:
           else
             openssl rand -hex 32 | npx wrangler secret put BACKUP_URL_SECRET
             echo "BACKUP_URL_SECRET: generated (32 random bytes, hex)"
+          fi
+
+          # 4) ADMIN_SECRET — shared server-to-server secret for the web admin
+          #    console proxy. Same value must be set as WORKER_ADMIN_SECRET on
+          #    Vercel (repo secret ADMIN_SECRET is the source of truth).
+          if [ -n "${ADMIN_IN:-}" ]; then
+            printf '%s' "$ADMIN_IN" | npx wrangler secret put ADMIN_SECRET
+            echo "ADMIN_SECRET: set from repo secret"
+          elif have_secret ADMIN_SECRET; then
+            echo "ADMIN_SECRET: already set on worker (kept)"
+          else
+            openssl rand -hex 32 | npx wrangler secret put ADMIN_SECRET
+            echo "ADMIN_SECRET: generated (32 random bytes, hex)"
           fi
 
       - name: Deploy Worker

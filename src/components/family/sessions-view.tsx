@@ -5,12 +5,14 @@
  * বড় মনিটর মোডাল (session-modal.tsx) অটো-ওপেন → End অপশন।
  * v1.4.0: ইন্টারনাল আর্কিটেকচার বর্ণনা সরানো হয়েছে (নিরাপত্তা) + প্রিমিয়াম গেট।
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { MonitorUp, Camera, Mic, ShieldCheck, Send, Square, Radio, Timer, Crown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useFamily, SESSION_LABEL, SESSION_PERMISSION } from "@/lib/family/store";
+import { isRealMode } from "@/lib/family/real";
 import { fmtClock, fmtTime } from "@/lib/family/engine";
+import { startViewer, type ViewerState } from "@/lib/family/webrtc-viewer";
 import { SectionCard, SessionStateBadge, PermBadge, PremiumUpsellDialog } from "./ui-bits";
 import { cn } from "@/lib/utils";
 import type { SessionType } from "@/lib/family/types";
@@ -30,21 +32,62 @@ const TYPE_DESC: Record<SessionType, string> = {
   safety: "জরুরি অবস্থায় স্ক্রিন + ক্যামেরা + মাইক + লোকেশন একসাথে",
 };
 
-/** সক্রিয় সেশনের স্ট্রিম প্রিভিউ (বড় মোডালের ছোট সংস্করণ) */
-function StreamPreview({ type }: { type: SessionType }) {
+/** সক্রিয় সেশনের স্ট্রিম প্রিভিউ (বড় মোডালের ছোট সংস্করণ) — real WebRTC */
+function StreamPreview({ type, deviceId, sessionId }: { type: SessionType; deviceId: string; sessionId: string }) {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [vstate, setVstate] = useState<ViewerState>("connecting");
+  const [detail, setDetail] = useState<string | undefined>();
+
+  useEffect(() => {
+    if (!isRealMode()) return;
+    const stop = startViewer({
+      deviceId,
+      sessionId,
+      kind: type === "safety" ? "screen" : type,
+      videoEl: videoRef.current,
+      audioEl: audioRef.current,
+      onState: (s, d) => {
+        setVstate(s);
+        setDetail(d);
+      },
+    });
+    return stop;
+  }, [deviceId, sessionId, type]);
+
+  const statusText: Record<ViewerState, string> = {
+    connecting: "সংযোগ শুরু হচ্ছে…",
+    waiting_offer: "চাইল্ড স্ট্রিম শুরু করলে এখানে দেখা যাবে",
+    connecting_media: "মিডিয়া সংযোগ স্থাপন হচ্ছে…",
+    live: "লাইভ",
+    ended: "স্ট্রিম শেষ",
+    failed: detail ?? "সংযোগ ব্যর্থ",
+  };
+  const showVideo = type !== "audio" && (vstate === "live" || vstate === "connecting_media");
+
   return (
     <div className="relative overflow-hidden rounded-xl border-2 border-emerald-400 aspect-video bg-gradient-to-br from-slate-900 via-emerald-950 to-slate-900">
-      <div className="absolute inset-0 opacity-30">
-        <div className="absolute h-40 w-40 rounded-full bg-emerald-500/40 blur-2xl animate-pulse left-8 top-8" />
-        <div className="absolute h-52 w-52 rounded-full bg-teal-500/30 blur-3xl animate-pulse right-10 bottom-4" style={{ animationDelay: "0.7s" }} />
-      </div>
-      <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-white">
-        <span className="text-4xl">{type === "screen" ? "🖥️" : type === "camera" ? "🎥" : type === "audio" ? "🎙️" : "🛡️"}</span>
-        <p className="text-sm font-medium">{SESSION_LABEL[type]} লাইভ</p>
-        <p className="text-[11px] text-emerald-300/80">চাইল্ড ডিভাইস সংযোগ হলে সরাসরি স্ট্রিম এখানে দেখা যাবে</p>
-      </div>
+      <video
+        ref={videoRef}
+        className={cn("h-full w-full object-contain bg-black", !showVideo && "hidden")}
+        autoPlay
+        playsInline
+      />
+      <audio ref={audioRef} autoPlay className="hidden" />
+      {!showVideo && (
+        <>
+          <div className="absolute inset-0 opacity-30">
+            <div className="absolute h-40 w-40 rounded-full bg-emerald-500/40 blur-2xl animate-pulse left-8 top-8" />
+            <div className="absolute h-52 w-52 rounded-full bg-teal-500/30 blur-3xl animate-pulse right-10 bottom-4" style={{ animationDelay: "0.7s" }} />
+          </div>
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-white">
+            <span className="text-4xl animate-pulse">{type === "screen" ? "🖥️" : type === "camera" ? "🎥" : type === "audio" ? "🎙️" : "🛡️"}</span>
+            <p className="text-sm font-medium">{statusText[vstate]}</p>
+          </div>
+        </>
+      )}
       <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5 rounded-full bg-rose-600 px-2.5 py-1 text-[11px] font-bold text-white">
-        <Radio className="h-3 w-3 animate-pulse" /> LIVE
+        <Radio className="h-3 w-3 animate-pulse" /> {vstate === "failed" ? "ERROR" : "LIVE"}
       </div>
       <div className="absolute top-2.5 right-2.5 rounded-full bg-black/50 px-2.5 py-1 text-[10px] text-white font-mono">
         {fmtClock(Date.now())}
@@ -108,9 +151,9 @@ export function SessionsView({ type }: { type: SessionType }) {
           description={TYPE_DESC[type]}
           icon={TYPE_ICON[type]}
         >
-          {/* প্রিভিউ / placeholder */}
+          {/* প্রিভিউ / placeholder — real সেশন id থাকলে WebRTC viewer */}
           {active?.state === "active" ? (
-            <StreamPreview type={type} />
+            <StreamPreview type={type} deviceId={device.id} sessionId={active.id} />
           ) : active?.state === "waiting_child" ? (
             <div className="rounded-xl border-2 border-amber-400 bg-amber-50 dark:bg-amber-950/30 aspect-video grid place-items-center text-center p-6">
               <div>

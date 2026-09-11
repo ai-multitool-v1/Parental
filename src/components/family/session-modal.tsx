@@ -11,11 +11,13 @@
  * - মিনিমাইজ করলে সেশন চলতে থাকে; সেশন ভিউ থেকে আবার খোলা যায়।
  * - Real mode: video element-এ WebRTC remote stream বসে (Firestore signaling)।
  */
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Radio, Square, Minimize2, MonitorUp, Camera, Mic, ShieldCheck, Volume2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { useFamily, SESSION_LABEL } from "@/lib/family/store";
+import { isRealMode } from "@/lib/family/real";
+import { startViewer, type ViewerState } from "@/lib/family/webrtc-viewer";
 import { cn } from "@/lib/utils";
 import type { SessionType } from "@/lib/family/types";
 
@@ -26,39 +28,84 @@ const TYPE_ICON: Record<SessionType, React.ReactNode> = {
   safety: <ShieldCheck className="h-5 w-5" />,
 };
 
-function StreamStage({ type }: { type: SessionType }) {
+/**
+ * Live stream stage — real mode-এ WebRTC viewer (Firestore signaling) remote
+ * stream-কে video/audio element-এ বসায়; sandbox/demo-তে placeholder।
+ */
+function StreamStage({ type, deviceId, sessionId }: { type: SessionType; deviceId: string; sessionId: string }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [vstate, setVstate] = useState<ViewerState>("connecting");
+  const [detail, setDetail] = useState<string | undefined>();
+
+  useEffect(() => {
+    if (!isRealMode()) return;
+    const stop = startViewer({
+      deviceId,
+      sessionId,
+      kind: type === "safety" ? "screen" : type,
+      videoEl: videoRef.current,
+      audioEl: audioRef.current,
+      onState: (s, d) => {
+        setVstate(s);
+        setDetail(d);
+      },
+    });
+    return stop;
+  }, [deviceId, sessionId, type]);
+
+  const statusText: Record<ViewerState, string> = {
+    connecting: "সংযোগ শুরু হচ্ছে…",
+    waiting_offer: "চাইল্ডের স্ট্রিমের অপেক্ষায়… (consent দিলেই শুরু হবে)",
+    connecting_media: "মিডিয়া সংযোগ স্থাপন হচ্ছে…",
+    live: "লাইভ",
+    ended: "স্ট্রিম শেষ হয়েছে",
+    failed: detail ?? "সংযোগ ব্যর্থ",
+  };
+
+  // মিডিয়া element গুলো সবসময় mount-এ থাকে (ref stability) — দৃশ্যমানতা
+  // শুধু className দিয়ে নিয়ন্ত্রিত, নইলে state-switch-এ stream হারায়।
+  const showVideo = type !== "audio" && (vstate === "live" || vstate === "connecting_media");
+
   return (
     <div className="relative overflow-hidden rounded-xl border-2 border-emerald-400 aspect-video bg-gradient-to-br from-slate-900 via-emerald-950 to-slate-900">
-      {/* Real mode: Firestore signaling থেকে remote stream — স্যান্ডবক্সে সংযোগ অবস্থা দেখানো হয় */}
-      <video ref={videoRef} className="hidden" autoPlay playsInline muted />
-      <div className="absolute inset-0 opacity-30">
-        <div className="absolute h-48 w-48 rounded-full bg-emerald-500/40 blur-3xl animate-pulse left-10 top-10" />
-        <div className="absolute h-60 w-60 rounded-full bg-teal-500/30 blur-3xl animate-pulse right-12 bottom-6" style={{ animationDelay: "0.7s" }} />
-      </div>
-      {type === "audio" ? (
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-white">
-          <div className="flex items-end gap-1.5 h-16" aria-hidden>
-            {[0.9, 1.4, 0.7, 1.8, 1.1, 1.5, 0.8, 1.3].map((d, i) => (
-              <span
-                key={i}
-                className="w-2.5 rounded-full bg-emerald-400/80 animate-pulse"
-                style={{ height: `${20 + i * 5}%`, animationDuration: `${d}s` }}
-              />
-            ))}
+      <video
+        ref={videoRef}
+        className={cn("h-full w-full object-contain bg-black", !showVideo && "hidden")}
+        autoPlay
+        playsInline
+      />
+      <audio ref={audioRef} autoPlay className={cn("hidden", type !== "audio" && "hidden")} />
+      {!showVideo && (
+        <>
+          <div className="absolute inset-0 opacity-30">
+            <div className="absolute h-48 w-48 rounded-full bg-emerald-500/40 blur-3xl animate-pulse left-10 top-10" />
+            <div className="absolute h-60 w-60 rounded-full bg-teal-500/30 blur-3xl animate-pulse right-12 bottom-6" style={{ animationDelay: "0.7s" }} />
           </div>
-          <p className="flex items-center gap-2 text-sm font-medium"><Volume2 className="h-4 w-4" /> {SESSION_LABEL[type]} সক্রিয়</p>
-          <p className="text-[11px] text-emerald-300/80">চাইল্ড ডিভাইসে indicator চালু আছে</p>
-        </div>
-      ) : (
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-white">
-          <span className="text-5xl">{type === "screen" ? "🖥️" : "🎥"}</span>
-          <p className="text-base font-medium">{SESSION_LABEL[type]} লাইভ</p>
-          <p className="text-[11px] text-emerald-300/80">চাইল্ড ডিভাইস সংযোগ হলে সরাসরি স্ট্রিম এখানে দেখা যাবে</p>
-        </div>
+          {type === "audio" ? (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-white">
+              <div className="flex items-end gap-1.5 h-16" aria-hidden>
+                {[0.9, 1.4, 0.7, 1.8, 1.1, 1.5, 0.8, 1.3].map((d, i) => (
+                  <span
+                    key={i}
+                    className="w-2.5 rounded-full bg-emerald-400/80 animate-pulse"
+                    style={{ height: `${20 + i * 5}%`, animationDuration: `${d}s` }}
+                  />
+                ))}
+              </div>
+              <p className="flex items-center gap-2 text-sm font-medium"><Volume2 className="h-4 w-4" /> {SESSION_LABEL[type]}</p>
+            </div>
+          ) : (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-white">
+              <span className="text-5xl animate-pulse">{type === "screen" ? "🖥️" : "🎥"}</span>
+              <p className="text-base font-medium">{statusText[vstate]}</p>
+              <p className="text-[11px] text-emerald-300/80">চাইল্ড ডিভাইসে indicator চালু আছে</p>
+            </div>
+          )}
+        </>
       )}
       <div className="absolute top-3 left-3 flex items-center gap-1.5 rounded-full bg-rose-600 px-3 py-1 text-xs font-bold text-white">
-        <Radio className="h-3.5 w-3.5 animate-pulse" /> LIVE
+        <Radio className="h-3.5 w-3.5 animate-pulse" /> {vstate === "failed" ? "ERROR" : "LIVE"}
       </div>
     </div>
   );
@@ -121,7 +168,7 @@ export function ActiveSessionModal() {
         </div>
 
         <div className="mt-3">
-          <StreamStage type={active.type} />
+          <StreamStage type={active.type} deviceId={device.id} sessionId={active.id} />
         </div>
 
         <div className="mt-3 flex flex-col sm:flex-row sm:items-center gap-2.5">

@@ -1,9 +1,13 @@
 package org.setbd.parentcontrol.ui
 
+import android.Manifest
 import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Intent
+import android.net.Uri
 import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -40,6 +44,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.delay
 import org.setbd.parentcontrol.R
 import org.setbd.parentcontrol.di.ServiceLocator
 import org.setbd.parentcontrol.management.ManagementMode
@@ -48,8 +53,13 @@ import org.setbd.parentcontrol.reliability.ReliabilityHelper
 
 /**
  * Settings: permission transparency dashboard, battery-reliability guidance
- * (with OEM-specific hints) and the unpair flow. Everything here is
- * user-initiated; there are no hidden toggles.
+ * (with OEM-specific hints) and the unpair flow.
+ *
+ * v1.4.2 — permission rows are now INTERACTIVE toggles that always mirror the
+ * REAL system permission state (re-sampled every 2.5 s while the screen is
+ * open, so returning from the system dialog flips the switch immediately).
+ * Tapping a toggle routes the child to the exact system dialog/screen that
+ * grants it — the app never fakes a state it did not verify from the OS.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -62,15 +72,71 @@ fun SettingsScreen(onBack: () -> Unit, onUnpaired: () -> Unit) {
         mutableStateOf(ServiceLocator.devicePolicyWrapper.isSelfHidden())
     }
 
-    // Snapshot + upload the permission state for the parent dashboard too.
+    // Live snapshot: refresh immediately + every 2.5 s while visible, so a
+    // toggle coming back from system settings reflects the new state at once.
     LaunchedEffect(Unit) {
-        val snap = ServiceLocator.permissionReporter.snapshot()
-        listOf(
-            "locationFine", "locationBackground", "notifications", "camera",
-            "microphone", "appUsageAccess", "batteryOptimizationIgnored",
-            "deviceAdmin", "accessibilityService",
-        ).forEach { key -> permissionState[key] = snap[key] == true }
-        iconHidden = snap["appIconHidden"] == true
+        while (true) {
+            val snap = ServiceLocator.permissionReporter.snapshot()
+            listOf(
+                "locationFine", "locationBackground", "notifications", "camera",
+                "microphone", "appUsageAccess", "batteryOptimizationIgnored",
+                "deviceAdmin", "accessibilityService", "overlay",
+            ).forEach { key -> permissionState[key] = snap[key] == true }
+            iconHidden = snap["appIconHidden"] == true
+            delay(2_500)
+        }
+    }
+
+    // Runtime permission requests (location/camera/mic/notifications) — the
+    // official system dialog, result re-sampled by the live loop above.
+    val runtimeRequest = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { /* state refreshes via the live snapshot loop */ }
+
+    /** Opens the exact system surface that grants [key]. */
+    fun requestPermission(key: String) {
+        runCatching {
+            when (key) {
+                "locationFine" -> runtimeRequest.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+                "notifications" -> {
+                    if (android.os.Build.VERSION.SDK_INT >= 33) {
+                        runtimeRequest.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    } else {
+                        ReliabilityHelper.openAppSettings(context)
+                    }
+                }
+                "camera" -> runtimeRequest.launch(Manifest.permission.CAMERA)
+                "microphone" -> runtimeRequest.launch(Manifest.permission.RECORD_AUDIO)
+                // Background location cannot be requested from the dialog on
+                // Android 10+ — the honest route is the app's settings page.
+                "locationBackground" -> context.startActivity(
+                    Intent(
+                        Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        Uri.fromParts("package", context.packageName, null),
+                    ),
+                )
+                "appUsageAccess" -> context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+                "overlay" -> context.startActivity(
+                    Intent(
+                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        Uri.parse("package:${context.packageName}"),
+                    ),
+                )
+                "deviceAdmin" -> context.startActivity(
+                    Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
+                        putExtra(
+                            DevicePolicyManager.EXTRA_DEVICE_ADMIN,
+                            ComponentName(context, org.setbd.parentcontrol.management.DeviceAdminReceiver::class.java),
+                        )
+                        putExtra(
+                            DevicePolicyManager.EXTRA_ADD_EXPLANATION,
+                            context.getString(R.string.settings_admin_explanation),
+                        )
+                    },
+                )
+                "accessibilityService" -> context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            }
+        }
     }
 
     Column(Modifier.fillMaxSize()) {
@@ -97,14 +163,49 @@ fun SettingsScreen(onBack: () -> Unit, onUnpaired: () -> Unit) {
             Spacer(Modifier.height(8.dp))
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(12.dp)) {
-                    PermissionRow(stringResource(R.string.settings_notifications), permissionState["notifications"])
-                    PermissionRow(stringResource(R.string.settings_location), permissionState["locationFine"])
-                    PermissionRow(stringResource(R.string.settings_background_location), permissionState["locationBackground"])
-                    PermissionRow(stringResource(R.string.settings_camera), permissionState["camera"])
-                    PermissionRow(stringResource(R.string.settings_microphone), permissionState["microphone"])
-                    PermissionRow(stringResource(R.string.settings_usage_access), permissionState["appUsageAccess"])
+                    PermissionToggleRow(
+                        label = stringResource(R.string.settings_notifications),
+                        granted = permissionState["notifications"],
+                        onToggle = { requestPermission("notifications") },
+                    )
+                    PermissionToggleRow(
+                        label = stringResource(R.string.settings_location),
+                        granted = permissionState["locationFine"],
+                        onToggle = { requestPermission("locationFine") },
+                    )
+                    PermissionToggleRow(
+                        label = stringResource(R.string.settings_background_location),
+                        granted = permissionState["locationBackground"],
+                        onToggle = { requestPermission("locationBackground") },
+                    )
+                    PermissionToggleRow(
+                        label = stringResource(R.string.settings_camera),
+                        granted = permissionState["camera"],
+                        onToggle = { requestPermission("camera") },
+                    )
+                    PermissionToggleRow(
+                        label = stringResource(R.string.settings_microphone),
+                        granted = permissionState["microphone"],
+                        onToggle = { requestPermission("microphone") },
+                    )
+                    PermissionToggleRow(
+                        label = stringResource(R.string.settings_usage_access),
+                        granted = permissionState["appUsageAccess"],
+                        onToggle = { requestPermission("appUsageAccess") },
+                    )
+                    PermissionToggleRow(
+                        label = stringResource(R.string.settings_overlay),
+                        granted = permissionState["overlay"],
+                        onToggle = { requestPermission("overlay") },
+                    )
                 }
             }
+            Text(
+                text = stringResource(R.string.settings_permissions_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 6.dp),
+            )
             Spacer(Modifier.height(8.dp))
             OutlinedButton(onClick = { ReliabilityHelper.openAppSettings(context) }) {
                 Text(stringResource(R.string.open_settings))
@@ -122,8 +223,16 @@ fun SettingsScreen(onBack: () -> Unit, onUnpaired: () -> Unit) {
             val managementMode = remember { ManagementState.current(context) }
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(12.dp)) {
-                    PermissionRow(stringResource(R.string.settings_device_admin), permissionState["deviceAdmin"])
-                    PermissionRow(stringResource(R.string.settings_accessibility), permissionState["accessibilityService"])
+                    PermissionToggleRow(
+                        label = stringResource(R.string.settings_device_admin),
+                        granted = permissionState["deviceAdmin"],
+                        onToggle = { requestPermission("deviceAdmin") },
+                    )
+                    PermissionToggleRow(
+                        label = stringResource(R.string.settings_accessibility),
+                        granted = permissionState["accessibilityService"],
+                        onToggle = { requestPermission("accessibilityService") },
+                    )
                     PermissionRow(
                         stringResource(R.string.settings_management_mode),
                         granted = (managementMode != ManagementMode.NONE),
@@ -133,42 +242,6 @@ fun SettingsScreen(onBack: () -> Unit, onUnpaired: () -> Unit) {
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    Spacer(Modifier.height(12.dp))
-
-                    // Device admin activation (visible system dialog).
-                    if (managementMode == ManagementMode.NONE) {
-                        OutlinedButton(
-                            onClick = {
-                                runCatching {
-                                    context.startActivity(
-                                        Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
-                                            putExtra(
-                                                DevicePolicyManager.EXTRA_DEVICE_ADMIN,
-                                                ComponentName(context, org.setbd.parentcontrol.management.DeviceAdminReceiver::class.java),
-                                            )
-                                            putExtra(
-                                                DevicePolicyManager.EXTRA_ADD_EXPLANATION,
-                                                context.getString(R.string.settings_admin_explanation),
-                                            )
-                                        },
-                                    )
-                                }
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                        ) { Text(stringResource(R.string.settings_activate_admin)) }
-                    }
-
-                    // Accessibility (App Guard) enable shortcut.
-                    if (permissionState["accessibilityService"] != true) {
-                        OutlinedButton(
-                            onClick = {
-                                runCatching {
-                                    context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-                                }
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                        ) { Text(stringResource(R.string.settings_enable_accessibility)) }
-                    }
                 }
             }
 
@@ -338,6 +411,35 @@ fun SettingsScreen(onBack: () -> Unit, onUnpaired: () -> Unit) {
     }
 }
 
+/**
+ * Interactive permission row — the switch mirrors the REAL OS state
+ * (never local-only); tapping it routes to the exact system dialog.
+ * When [granted] is null (first sample pending) the row renders read-only.
+ */
+@Composable
+private fun PermissionToggleRow(label: String, granted: Boolean?, onToggle: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+        Text(
+            text = stringResource(if (granted == true) R.string.settings_granted else R.string.settings_denied),
+            style = MaterialTheme.typography.labelMedium,
+            color = if (granted == true) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+            modifier = Modifier.padding(end = 8.dp),
+        )
+        Switch(
+            checked = granted == true,
+            enabled = granted != null,
+            onCheckedChange = { onToggle() },
+        )
+    }
+}
+
+/** Read-only informational row (management mode etc.). */
 @Composable
 private fun PermissionRow(label: String, granted: Boolean?) {
     Row(

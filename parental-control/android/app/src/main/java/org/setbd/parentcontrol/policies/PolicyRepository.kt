@@ -34,6 +34,9 @@ data class Policy(
      *  management mode supports them — never bypassed). */
     val hideAppIcon: Boolean = false,
     val protectSettings: Boolean = false,
+    /** v1.4.2 — parent's location-tracking gate. Default ON (families that
+     *  paired before this shipped keep reporting). */
+    val locationTracking: Boolean = true,
 )
 
 /**
@@ -225,6 +228,7 @@ class PolicyRepository(private val context: Context) {
                 ?: System.currentTimeMillis(),
             hideAppIcon = settings?.get("hideAppIcon") as? Boolean ?: false,
             protectSettings = settings?.get("protectSettings") as? Boolean ?: false,
+            locationTracking = (data["locationTracking"] as? Boolean) ?: true,
         )
     }
 
@@ -253,6 +257,7 @@ class PolicyRepository(private val context: Context) {
                 put("protectSettings", p.protectSettings)
             },
         )
+        put("locationTracking", p.locationTracking)
     }.toString()
 
     private fun fromJson(j: JSONObject): Policy = Policy(
@@ -280,6 +285,7 @@ class PolicyRepository(private val context: Context) {
         updatedAtMs = j.optLong("updatedAtMs", System.currentTimeMillis()),
         hideAppIcon = j.optJSONObject("settings")?.optBoolean("hideAppIcon", false) ?: false,
         protectSettings = j.optJSONObject("settings")?.optBoolean("protectSettings", false) ?: false,
+        locationTracking = if (j.has("locationTracking")) j.optBoolean("locationTracking", true) else true,
     )
 }
 

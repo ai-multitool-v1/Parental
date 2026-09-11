@@ -30,6 +30,7 @@ const ALLOWED_ENDPOINTS = new Set([
   "endSession",
   "sendParentNotification",
   "listDevices",
+  "deviceData",
   "setPolicy",
   "unpairDevice",
   "backupSetPolicy",
@@ -40,6 +41,8 @@ const ALLOWED_ENDPOINTS = new Set([
   "backupListForChild",
   "adminSetBanState",
   "adminSetPlan",
+  "adminListUsers",
+  "adminDeleteUser",
   "sweep",
 ]);
 

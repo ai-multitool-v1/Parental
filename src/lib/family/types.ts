@@ -166,6 +166,10 @@ export interface ChildDevice {
   childName: string;
   childUid: string;
   model: string;
+  /** v1.4.2 — real device identity from the child heartbeat */
+  manufacturer: string;
+  ramTotalMb: number | null;
+  storageTotalGb: number | null;
   androidVersion: string;
   appVersion: string;
   batteryLevel: number;

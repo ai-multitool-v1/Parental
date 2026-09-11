@@ -413,6 +413,12 @@ export class FirestoreRest {
     if (filters.length === 1) structured.where = filters[0];
     else if (filters.length > 1)
       structured.where = { compositeFilter: { op: "AND", filters } };
+    if (q.orders.length > 0) {
+      structured.orderBy = q.orders.map((o) => ({
+        field: { fieldPath: o.field },
+        direction: o.direction === "desc" ? "DESCENDING" : "ASCENDING",
+      }));
+    }
     if (q.limitCount !== undefined) structured.limit = q.limitCount;
     return structured;
   }
@@ -577,6 +583,11 @@ export interface Filter {
   value: unknown;
 }
 
+export interface OrderSpec {
+  field: string;
+  direction: "asc" | "desc";
+}
+
 export class Query {
   constructor(
     private store: FirestoreRest,
@@ -584,18 +595,23 @@ export class Query {
     public readonly collectionId: string,
     public readonly allDescendants: boolean,
     public readonly filters: Filter[] = [],
-    public readonly limitCount: number | undefined = undefined
+    public readonly limitCount: number | undefined = undefined,
+    public readonly orders: OrderSpec[] = []
   ) {}
 
   where(field: string, op: string, value: unknown): Query {
     return new Query(this.store, this.parentPath, this.collectionId, this.allDescendants, [
       ...this.filters,
       { field, op, value },
-    ], this.limitCount);
+    ], this.limitCount, this.orders);
+  }
+
+  orderBy(field: string, direction: "asc" | "desc" = "asc"): Query {
+    return new Query(this.store, this.parentPath, this.collectionId, this.allDescendants, this.filters, this.limitCount, [...this.orders, { field, direction }]);
   }
 
   limit(n: number): Query {
-    return new Query(this.store, this.parentPath, this.collectionId, this.allDescendants, this.filters, n);
+    return new Query(this.store, this.parentPath, this.collectionId, this.allDescendants, this.filters, n, this.orders);
   }
 
   count(): CountQuery {
@@ -635,6 +651,10 @@ export class CollectionRef {
 
   where(field: string, op: string, value: unknown): Query {
     return new Query(this.store, this.path, this.id, false).where(field, op, value);
+  }
+
+  orderBy(field: string, direction: "asc" | "desc" = "asc"): Query {
+    return new Query(this.store, this.path, this.id, false).orderBy(field, direction);
   }
 
   limit(n: number): Query {

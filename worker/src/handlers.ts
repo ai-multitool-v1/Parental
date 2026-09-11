@@ -1612,6 +1612,248 @@ export const adminSetPlan: Handler = async (_env, caller, data) => {
   return { ok: true, targetUid, plan };
 };
 
+/** Device subcollections wiped by adminDeleteUser's cascade. */
+const DEVICE_SUBCOLLECTIONS = [
+  "parents", "commands", "commandResults", "sessions", "signals", "notifications",
+  "installedApps", "appUsage", "locations", "emergencyEvents", "backupItems",
+  "backupStats", "backupPolicy", "status", "permissions", "policies",
+] as const;
+
+/**
+ * Deletes every document under one device's known subcollections (REST has
+ * no recursive delete — list then batch-delete, bounded per collection).
+ */
+async function purgeDeviceSubcollections(deviceId: string): Promise<number> {
+  const root = db().doc(`devices/${deviceId}`);
+  let deleted = 0;
+  for (const sub of DEVICE_SUBCOLLECTIONS) {
+    try {
+      for (let page = 0; page < 20; page++) {
+        const snap = await root.collection(sub).limit(450).get();
+        if (snap.docs.length === 0) break;
+        const writer = db().bulkWriter();
+        snap.docs.forEach((d) => writer.delete(d.ref));
+        await writer.close();
+        deleted += snap.docs.length;
+        if (snap.docs.length < 450) break;
+      }
+    } catch (err) {
+      // signals live under sessions/{sid}/signals — handled per-session below.
+      console.warn(
+        JSON.stringify({
+          severity: "WARNING",
+          message: "admin_purge_subcollection_failed",
+          deviceId,
+          sub,
+          error: err instanceof Error ? err.message : String(err),
+        })
+      );
+    }
+  }
+  // WebRTC signaling envelopes are nested one level deeper (sessions/{sid}/signals).
+  try {
+    const sessions = await root.collection("sessions").limit(100).get();
+    for (const s of sessions.docs) {
+      const signals = await s.ref.collection("signals").limit(450).get();
+      if (signals.docs.length > 0) {
+        const writer = db().bulkWriter();
+        signals.docs.forEach((d) => writer.delete(d.ref));
+        await writer.close();
+        deleted += signals.docs.length;
+      }
+    }
+  } catch {
+    /* best-effort */
+  }
+  return deleted;
+}
+
+/**
+ * adminListUsers — REAL registered accounts (Firebase Auth) enriched with
+ * Firestore profile fields (plan/banned/role) + owned-device counts. Powers
+ * the web admin console's "Registered Users" tab (no more demo seed data).
+ */
+export const adminListUsers: Handler = async (_env, caller, data) => {
+  const adminUid = requireAdmin(caller);
+  await enforceRateLimit(`admin:${adminUid}`, ADMIN_RATE_LIMIT, "Admin action rate limit exceeded. Wait a moment.");
+
+  const maxResults = Math.min(Math.max(Number(data["maxResults"]) || 500, 1), 1000);
+  const pageTokenRaw = typeof data["pageToken"] === "string" ? (data["pageToken"] as string) : undefined;
+
+  const listed = await auth().listUsers(maxResults, pageTokenRaw);
+  const uids = listed.users.map((u) => u.uid);
+
+  // Firestore profile enrichment (plan/banned/role) — batched, fault-tolerant.
+  const profiles = new Map<string, Record<string, unknown>>();
+  await Promise.all(
+    uids.map(async (uid) => {
+      try {
+        const snap = await db().doc(`users/${uid}`).get();
+        if (snap.exists) profiles.set(uid, snap.data() as Record<string, unknown>);
+      } catch {
+        /* profile doc optional */
+      }
+    })
+  );
+
+  // Owned-device counts (IN query in chunks of 10 — Firestore disjunction limit).
+  const deviceCounts = new Map<string, number>();
+  for (let i = 0; i < uids.length; i += 10) {
+    const chunk = uids.slice(i, i + 10);
+    if (chunk.length === 0) continue;
+    try {
+      const snap = await db()
+        .collection("devices")
+        .where("ownerParentUid", "in", chunk)
+        .get();
+      snap.docs.forEach((d) => {
+        const owner = (d.data() as Record<string, unknown>)["ownerParentUid"];
+        if (typeof owner === "string") {
+          deviceCounts.set(owner, (deviceCounts.get(owner) ?? 0) + 1);
+        }
+      });
+    } catch {
+      /* counts stay 0 on failure */
+    }
+  }
+
+  return {
+    users: listed.users.map((u) => {
+      const prof = profiles.get(u.uid) ?? {};
+      return {
+        uid: u.uid,
+        email: u.email ?? "",
+        displayName: u.displayName ?? "",
+        disabled: u.disabled === true,
+        admin: u.customClaims?.["admin"] === true,
+        createdAtMs: u.metadata.creationTime ? Date.parse(u.metadata.creationTime) : null,
+        lastSignInMs: u.metadata.lastSignInTime ? Date.parse(u.metadata.lastSignInTime) : null,
+        plan: prof["plan"] === "premium" ? "premium" : "free",
+        banned: prof["banned"] === true,
+        role: (prof["role"] as string) ?? null,
+        deviceCount: deviceCounts.get(u.uid) ?? 0,
+      };
+    }),
+    total: listed.users.length,
+    pageToken: listed.pageToken ?? null,
+  };
+};
+
+/**
+ * adminDeleteUser — FULL account deletion (GDPR-style): removes the Firebase
+ * Auth account, every device the parent owns (docs + subcollections), the
+ * paired child auth accounts, children/{uid} docs, their users/{uid} profile
+ * and any outstanding pairing codes. Irreversible — the web console asks for
+ * confirmation before calling this.
+ */
+export const adminDeleteUser: Handler = async (_env, caller, data) => {
+  const adminUid = requireAdmin(caller);
+  await enforceRateLimit(`admin:${adminUid}`, ADMIN_RATE_LIMIT, "Admin action rate limit exceeded. Wait a moment.");
+
+  const targetUid = data["targetUid"];
+  if (typeof targetUid !== "string" || targetUid.length < 8 || targetUid.length > 128) {
+    throw new ApiError("invalid-argument", 'Field "targetUid" is malformed.');
+  }
+  if (targetUid === adminUid) {
+    throw new ApiError("permission-denied", "Admins cannot delete their own account.");
+  }
+
+  let authUser;
+  try {
+    authUser = await auth().getUser(targetUid);
+  } catch {
+    throw new ApiError("not-found", "Target user does not exist in Firebase Auth.");
+  }
+  if (authUser.customClaims?.["admin"] === true) {
+    throw new ApiError("permission-denied", "Admin accounts cannot be deleted here.");
+  }
+
+  const ownedDevices = await db()
+    .collection("devices")
+    .where("ownerParentUid", "==", targetUid)
+    .limit(10)
+    .get();
+
+  const childUids: string[] = [];
+  let devicesRemoved = 0;
+  for (const d of ownedDevices.docs) {
+    const v = d.data() as Record<string, unknown>;
+    if (typeof v["childUid"] === "string" && v["childUid"]) childUids.push(v["childUid"]);
+    await purgeDeviceSubcollections(d.id);
+    try {
+      await db().doc(`devices/${d.id}`).delete();
+      devicesRemoved++;
+    } catch (err) {
+      console.warn(
+        JSON.stringify({
+          severity: "WARNING",
+          message: "admin_delete_device_doc_failed",
+          deviceId: d.id,
+          error: err instanceof Error ? err.message : String(err),
+        })
+      );
+    }
+  }
+
+  // Child auth accounts + children/{uid} profile docs.
+  let childUsersRemoved = 0;
+  for (const childUid of [...new Set(childUids)]) {
+    try {
+      await auth().deleteUser(childUid);
+      childUsersRemoved++;
+    } catch (err) {
+      console.warn(
+        JSON.stringify({
+          severity: "WARNING",
+          message: "admin_delete_child_auth_failed",
+          childUid,
+          error: err instanceof Error ? err.message : String(err),
+        })
+      );
+    }
+    try {
+      await db().doc(`children/${childUid}`).delete();
+    } catch {
+      /* doc may not exist */
+    }
+  }
+
+  // Outstanding pairing codes minted by this parent.
+  try {
+    const codes = await db()
+      .collection("pairingCodes")
+      .where("parentUid", "==", targetUid)
+      .limit(20)
+      .get();
+    if (codes.docs.length > 0) {
+      const writer = db().bulkWriter();
+      codes.docs.forEach((c) => writer.delete(c.ref));
+      await writer.close();
+    }
+  } catch {
+    /* best-effort */
+  }
+
+  // Firestore profile doc + the Auth account itself.
+  try {
+    await db().doc(`users/${targetUid}`).delete();
+  } catch {
+    /* doc may not exist */
+  }
+  await auth().deleteUser(targetUid);
+
+  await writeAudit({
+    functionName: "adminDeleteUser",
+    actorUid: adminUid,
+    actorType: "ADMIN",
+    action: "ADMIN_DELETE_USER",
+    result: "ALLOWED",
+    details: { targetUid, email: authUser.email ?? null, devicesRemoved, childUsersRemoved },
+  });
+
+  return { ok: true, targetUid, devicesRemoved, childUsersRemoved };
+};
+
 /* ════════════════════════════════ profile ═══════════════════════════════ */
 
 /** Lightweight identity probe — provisions/refreshes the parent profile. */
@@ -1719,6 +1961,13 @@ export const listDevices: Handler = async (_env, caller, data) => {
         networkType: (status["networkType"] as string) ?? null,
         appVersion: (status["appVersion"] as string) ?? null,
         androidVersion: (status["androidVersion"] as string) ?? null,
+        // v1.4.2 — structured device identity (child heartbeat writes these).
+        model: (status["model"] as string) ?? null,
+        manufacturer: (status["manufacturer"] as string) ?? null,
+        ramTotalMb: typeof status["totalRamMb"] === "number" ? (status["totalRamMb"] as number) : null,
+        ramAvailableMb: typeof status["availableRamMb"] === "number" ? (status["availableRamMb"] as number) : null,
+        storageTotalGb: typeof status["totalStorageGb"] === "number" ? (status["totalStorageGb"] as number) : null,
+        storageAvailableGb: typeof status["availableStorageGb"] === "number" ? (status["availableStorageGb"] as number) : null,
         policyVersion: (v["policyVersion"] as number | null) ?? null,
         permissions: permSnap.exists ? (permSnap.data() as Record<string, unknown>) : null,
         policy: policySnap.exists ? (policySnap.data() as Record<string, unknown>) : null,
@@ -1754,6 +2003,207 @@ export const listDevices: Handler = async (_env, caller, data) => {
 
 const PKG_RE = /^[A-Za-z0-9_][A-Za-z0-9_.]{0,119}$/;
 const HHMM_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/**
+ * deviceData — heavy per-device collections the 5-second listDevices poll
+ * deliberately does NOT carry (apps inventory, usage, locations, SOS,
+ * backup items, notifications, active sessions). The dashboard calls this
+ * on view-open + a 60s refresh while the view stays visible, keeping the
+ * cheap poll cheap and Firestore read volume bounded.
+ */
+const DEVICE_DATA_SECTIONS = [
+  "apps", "usage", "locations", "emergency", "backup", "notifications", "sessions",
+] as const;
+type DeviceDataSection = (typeof DEVICE_DATA_SECTIONS)[number];
+
+export const deviceData: Handler = async (_env, caller, data) => {
+  const deviceId = requireDeviceId(data["deviceId"]);
+  await requireParentGate(deviceId, caller);
+
+  const sectionReq = Array.isArray(data["sections"]) ? (data["sections"] as unknown[]) : [];
+  const sections = DEVICE_DATA_SECTIONS.filter((s) =>
+    sectionReq.some((x) => x === s),
+  ) as DeviceDataSection[];
+  if (sections.length === 0) {
+    throw new ApiError(
+      "invalid-argument",
+      `Field "sections" must contain at least one of: ${DEVICE_DATA_SECTIONS.join(", ")}.`,
+    );
+  }
+
+  const root = db().doc(`devices/${deviceId}`);
+  const out: Record<string, unknown> = { deviceId };
+
+  await Promise.all(
+    sections.map(async (section) => {
+      try {
+        switch (section) {
+          case "apps": {
+            const snap = await root.collection("installedApps").limit(300).get();
+            out["apps"] = snap.docs
+              .filter((d) => d.id !== "_summary")
+              .map((d) => {
+                const v = d.data() as Record<string, unknown>;
+                return {
+                  packageName: d.id,
+                  appName: (v["appName"] as string) ?? d.id,
+                  versionName: (v["versionName"] as string) ?? "",
+                  isSystem: v["isSystem"] === true,
+                  installedAtMs: tsToMs(v["installedAt"]) ?? 0,
+                };
+              });
+            break;
+          }
+          case "usage": {
+            const since = new Date(Date.now() - 7 * 24 * 3600_000);
+            const key = since.toISOString().slice(0, 10);
+            const snap = await root
+              .collection("appUsage")
+              .where("date", ">=", key)
+              .limit(8)
+              .get();
+            out["usage"] = snap.docs
+              .map((d) => {
+                const v = d.data() as Record<string, unknown>;
+                return {
+                  date: (v["date"] as string) ?? d.id,
+                  totalScreenTimeMinutes:
+                    typeof v["totalScreenTimeMinutes"] === "number"
+                      ? (v["totalScreenTimeMinutes"] as number)
+                      : 0,
+                  perApp:
+                    v["perApp"] && typeof v["perApp"] === "object"
+                      ? (v["perApp"] as Record<string, { appName?: string; minutes?: number }>)
+                      : {},
+                };
+              })
+              .sort((a, b) => (a.date < b.date ? 1 : -1));
+            break;
+          }
+          case "locations": {
+            const snap = await root
+              .collection("locations")
+              .orderBy("timestamp", "desc")
+              .limit(20)
+              .get();
+            out["locations"] = snap.docs.map((d) => {
+              const v = d.data() as Record<string, unknown>;
+              return {
+                id: d.id,
+                lat: typeof v["lat"] === "number" ? (v["lat"] as number) : 0,
+                lng: typeof v["lng"] === "number" ? (v["lng"] as number) : 0,
+                accuracy: typeof v["accuracyMeters"] === "number" ? (v["accuracyMeters"] as number) : 0,
+                timestampMs: tsToMs(v["timestamp"]) ?? 0,
+              };
+            });
+            break;
+          }
+          case "emergency": {
+            const snap = await root
+              .collection("emergencyEvents")
+              .orderBy("timestamp", "desc")
+              .limit(15)
+              .get();
+            out["emergencyEvents"] = snap.docs.map((d) => {
+              const v = d.data() as Record<string, unknown>;
+              const locMap =
+                v["location"] && typeof v["location"] === "object"
+                  ? (v["location"] as Record<string, unknown>)
+                  : {};
+              return {
+                id: d.id,
+                type: (v["type"] as string) ?? "SOS",
+                lat: typeof locMap["lat"] === "number" ? (locMap["lat"] as number) : null,
+                lng: typeof locMap["lng"] === "number" ? (locMap["lng"] as number) : null,
+                batteryLevel:
+                  typeof v["batteryPercent"] === "number" ? (v["batteryPercent"] as number) : null,
+                networkType: (v["networkType"] as string) ?? null,
+                acknowledged: v["acknowledged"] === true,
+                createdAtMs: tsToMs(v["timestamp"]) ?? 0,
+              };
+            });
+            break;
+          }
+          case "backup": {
+            const [statsSnap, itemsSnap] = await Promise.all([
+              root.collection("backupStats").doc("current").get(),
+              root
+                .collection("backupItems")
+                .where("state", "==", "UPLOADED")
+                .limit(30)
+                .get(),
+            ]);
+            out["backupStats"] = statsSnap.exists
+              ? (statsSnap.data() as Record<string, unknown>)
+              : null;
+            out["backupItems"] = itemsSnap.docs.map((d) => {
+              const v = d.data() as Record<string, unknown>;
+              return {
+                id: d.id,
+                category: (v["category"] as string) ?? "photos",
+                fileName: (v["fileName"] as string) ?? d.id,
+                mimeType: (v["mimeType"] as string) ?? "application/octet-stream",
+                sizeBytes: typeof v["sizeBytes"] === "number" ? (v["sizeBytes"] as number) : 0,
+                ivB64: (v["ivB64"] as string) ?? null,
+                uploadedAtMs: tsToMs(v["uploadedAt"]) ?? tsToMs(v["createdAt"]) ?? 0,
+              };
+            });
+            break;
+          }
+          case "notifications": {
+            const snap = await root
+              .collection("notifications")
+              .orderBy("createdAt", "desc")
+              .limit(15)
+              .get();
+            out["notifications"] = snap.docs.map((d) => {
+              const v = d.data() as Record<string, unknown>;
+              return {
+                id: d.id,
+                message: (v["message"] as string) ?? "",
+                deliveredAtMs: tsToMs(v["deliveredAt"]),
+                createdAtMs: tsToMs(v["createdAt"]) ?? 0,
+              };
+            });
+            break;
+          }
+          case "sessions": {
+            const snap = await root
+              .collection("sessions")
+              .where("state", "==", "ACTIVE")
+              .limit(5)
+              .get();
+            out["sessions"] = snap.docs.map((d) => {
+              const v = d.data() as Record<string, unknown>;
+              return {
+                sessionId: d.id,
+                type: (v["type"] as string) ?? "SCREEN",
+                state: (v["state"] as string) ?? "REQUESTED",
+                startedAtMs: tsToMs(v["startedAt"]),
+                expiresAtMs: tsToMs(v["expiresAt"]),
+              };
+            });
+            break;
+          }
+        }
+      } catch (err) {
+        // Section failure must not sink the whole response.
+        out[section] = [];
+        console.warn(
+          JSON.stringify({
+            severity: "WARNING",
+            message: "deviceData_section_failed",
+            deviceId,
+            section,
+            error: err instanceof Error ? err.message : String(err),
+          }),
+        );
+      }
+    }),
+  );
+
+  return out;
+};
 
 /**
  * setPolicy — parent writes devices/{deviceId}/policies/current (version-bumped,
@@ -1854,6 +2304,15 @@ export const setPolicy: Handler = async (_env, caller, data) => {
     }
   }
 
+  // v1.4.2 — locationTracking gate (real toggle, child gates its own writes).
+  let locationTracking: boolean | null = null;
+  if (patch["locationTracking"] !== undefined) {
+    if (typeof patch["locationTracking"] !== "boolean") {
+      throw new ApiError("invalid-argument", 'Field "patch.locationTracking" must be boolean.');
+    }
+    locationTracking = patch["locationTracking"] as boolean;
+  }
+
   const ref = db().doc(`devices/${deviceId}/policies/current`);
   const version = await db().runTransaction(async (tx) => {
     const snap = await tx.get(ref);
@@ -1880,6 +2339,9 @@ export const setPolicy: Handler = async (_env, caller, data) => {
     if (prev?.["emergencyContacts"] !== undefined) {
       next["emergencyContacts"] = prev["emergencyContacts"];
     }
+    // locationTracking defaults to ON (true) — absent field never blocks a
+    // family that paired before this feature shipped.
+    next["locationTracking"] = locationTracking ?? (prev?.["locationTracking"] !== false);
     tx.set(ref, next, { merge: false });
     return nextVersion;
   });

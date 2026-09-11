@@ -149,6 +149,7 @@ export function bindEnv(env: Env): void {
   process.env.FIREBASE_SERVICE_ACCOUNT_JSON ??= env.FIREBASE_SERVICE_ACCOUNT_JSON;
   process.env.BACKUP_KEK ??= env.BACKUP_KEK ?? "";
   process.env.ENFORCE_APP_CHECK ??= env.ENFORCE_APP_CHECK ?? "0";
+  process.env.ADMIN_SECRET ??= env.ADMIN_SECRET ?? "";
 }
 
 export { Timestamp };

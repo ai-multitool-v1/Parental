@@ -50,6 +50,9 @@ import {
   realRequestSession,
   realSetPolicy,
   realSetBackupPolicy,
+  realDeviceData,
+  realBackupGetDownloadUrl,
+  realBackupGetKey,
   RealApiError,
   type RealDeviceDoc,
   type RealProfile,
@@ -232,6 +235,9 @@ type Store = FamilyState & {
   startRealtime: () => void;
   /** Worker listDevices-এর একটি ডিভাইস রো → zustand স্টেটে merge। */
   applyRealDevice: (doc: RealDeviceDoc) => void;
+  /** v1.4.2 — heavy collections (apps/usage/locations/SOS/backup/notifications)
+   *  deviceData endpoint থেকে আনে। view-open + ৬০ সেকেন্ড পরপর ডাকা হয়। */
+  refreshDeviceData: (sections?: string[]) => Promise<void>;
 };
 
 let authBootstrapStarted = false;
@@ -245,6 +251,8 @@ let authBootstrapStarted = false;
 let realtimeTimer: ReturnType<typeof setInterval> | null = null;
 let realtimeInFlight = false;
 let realtimeFirstPollDone = false;
+let realtimeTickCount = 0;
+let deviceDataInFlight = false;
 const seenDeviceIds = new Set<string>();
 const pendingRealCommands = new Map<string, { deviceId: string; type: string; sessionId?: string }>();
 const REALTIME_MS_VISIBLE = 5000;
@@ -641,6 +649,11 @@ export const useFamily = create<Store>((set, get) => {
         } finally {
           realtimeInFlight = false;
         }
+        // ---- heavy collections (apps/usage/locations/backup/…) — ৬০ সেকেন্ড পরপর
+        realtimeTickCount++;
+        if (realtimeTickCount % 12 === 0 && get().device.paired) {
+          void get().refreshDeviceData();
+        }
       };
 
       void tick();
@@ -708,7 +721,7 @@ export const useFamily = create<Store>((set, get) => {
             ? (bedtimeRaw?.["allowedPackages"] as string[])
             : st.device.policy.bedtime.allowedApps,
         },
-        locationTracking: st.device.policy.locationTracking,
+        locationTracking: pol["locationTracking"] !== undefined ? pol["locationTracking"] !== false : st.device.policy.locationTracking,
         settings: {
           hideAppIcon:
             (pol["settings"] as Record<string, unknown> | undefined)?.["hideAppIcon"] === true,
@@ -743,7 +756,10 @@ export const useFamily = create<Store>((set, get) => {
         name: doc.deviceName,
         childName: doc.childName ?? st.device.childName,
         childUid: doc.childUid ?? st.device.childUid,
-        model: st.device.model,
+        model: doc.model ?? st.device.model,
+        manufacturer: doc.manufacturer ?? st.device.manufacturer,
+        ramTotalMb: typeof doc.ramTotalMb === "number" ? doc.ramTotalMb : st.device.ramTotalMb,
+        storageTotalGb: typeof doc.storageTotalGb === "number" ? doc.storageTotalGb : st.device.storageTotalGb,
         androidVersion: doc.androidVersion ?? (typeof perm["androidVersion"] === "string" ? (perm["androidVersion"] as string) : st.device.androidVersion),
         appVersion: doc.appVersion ?? (typeof perm["appVersion"] === "string" ? (perm["appVersion"] as string) : st.device.appVersion),
         batteryLevel: typeof doc.batteryLevel === "number" ? doc.batteryLevel : st.device.batteryLevel,
@@ -771,6 +787,116 @@ export const useFamily = create<Store>((set, get) => {
       });
       if (Object.keys(backupPolicyPatch).length > 0) {
         set((s) => ({ backupPolicy: { ...s.backupPolicy, ...backupPolicyPatch } }));
+      }
+    },
+
+    /* -------- v1.4.2 heavy device collections (deviceData endpoint) -------- */
+    refreshDeviceData: async (sections) => {
+      if (!isRealMode() || deviceDataInFlight) return;
+      const st = get();
+      const deviceId = st.device.id;
+      if (!deviceId || deviceId === DEVICE_UNPAIRED_ID || !st.device.paired) return;
+      deviceDataInFlight = true;
+      try {
+        const all = ["apps", "usage", "locations", "emergency", "backup", "notifications"];
+        const wanted = sections && sections.length > 0 ? sections : all;
+        const data = await realDeviceData(deviceId, wanted);
+        const patch: Record<string, unknown> = {};
+        if (data.apps && data.apps.length > 0) {
+          patch.installedApps = data.apps.map((a) => ({
+            packageName: a.packageName,
+            appName: a.appName,
+            version: a.versionName,
+            isSystem: a.isSystem,
+            category: "other",
+            installedAt: a.installedAtMs,
+          }));
+        }
+        if (data.usage && data.usage.length > 0) {
+          const latest = data.usage[0];
+          const perApp = latest.perApp ?? {};
+          const minutes7d = new Map<string, number>();
+          data.usage.forEach((day) =>
+            Object.entries(day.perApp ?? {}).forEach(([pkg, v]) =>
+              minutes7d.set(pkg, (minutes7d.get(pkg) ?? 0) + (v.minutes ?? 0)),
+            ),
+          );
+          patch.usage = Object.entries(perApp)
+            .map(([pkg, v]) => ({
+              packageName: pkg,
+              appName: v.appName ?? pkg,
+              category: "other",
+              minutesToday: v.minutes ?? 0,
+              minutes7d: minutes7d.get(pkg) ?? v.minutes ?? 0,
+              minutes30d: minutes7d.get(pkg) ?? v.minutes ?? 0,
+              lastUsed: 0,
+            }))
+            .sort((a, b) => b.minutesToday - a.minutesToday);
+          patch.usageTrend = [...data.usage]
+            .sort((a, b) => (a.date < b.date ? -1 : 1))
+            .map((d) => ({ date: d.date, minutes: d.totalScreenTimeMinutes }));
+        }
+        if (data.locations) {
+          patch.locations = data.locations.map((l) => ({
+            id: l.id,
+            lat: l.lat,
+            lng: l.lng,
+            accuracy: l.accuracy,
+            timestamp: l.timestampMs,
+          }));
+        }
+        if (data.emergencyEvents) {
+          patch.emergencies = data.emergencyEvents.map((e) => ({
+            id: e.id,
+            timestamp: e.createdAtMs,
+            batteryLevel: e.batteryLevel ?? 0,
+            networkType: (e.networkType === "wifi" || e.networkType === "mobile" ? e.networkType : "none") as "wifi" | "mobile" | "none",
+            lat: e.lat ?? 0,
+            lng: e.lng ?? 0,
+            acknowledged: e.acknowledged,
+            escalationLevel: 0,
+            note: e.type === "SOS" ? "চাইল্ড SOS" : "সেফটি চেক রেসপন্স নেই",
+          }));
+        }
+        if (data.backupItems) {
+          patch.backupItems = data.backupItems.map((it) => ({
+            id: it.id,
+            category: (it.category as BackupCategory) ?? "photos",
+            fileName: it.fileName,
+            mimeType: it.mimeType,
+            sizeBytes: it.sizeBytes,
+            checksumSha256: "",
+            state: "UPLOADED" as const,
+            attempts: 1,
+            createdAt: it.uploadedAtMs,
+            uploadedAt: it.uploadedAtMs,
+          }));
+        }
+        if (data.backupStats && typeof data.backupStats === "object") {
+          const s = data.backupStats as Record<string, unknown>;
+          patch.backupStats = {
+            totalBytes: typeof s["totalBytes"] === "number" ? (s["totalBytes"] as number) : 0,
+            itemCounts: (s["itemCounts"] ?? {}) as Partial<Record<BackupCategory, number>>,
+            lastBackupAt: (s["lastBackupAt"] ?? {}) as Partial<Record<BackupCategory, number>>,
+            lastBackupAtAny: typeof s["lastBackupAtAny"] === "number" ? (s["lastBackupAtAny"] as number) : undefined,
+          };
+        }
+        if (data.notifications) {
+          patch.notifications = data.notifications.map((n) => ({
+            id: n.id,
+            message: n.message,
+            sentAt: n.createdAtMs,
+            deliveredAt: n.deliveredAtMs ?? undefined,
+            delivered: n.deliveredAtMs != null,
+            read: false,
+          }));
+        }
+        if (Object.keys(patch).length > 0) set(patch as Partial<FamilyState>);
+      } catch (err) {
+        // Heavy-refresh failure is non-fatal — next 60s tick retries.
+        console.warn("[deviceData] refresh failed:", err instanceof Error ? err.message : err);
+      } finally {
+        deviceDataInFlight = false;
       }
     },
 
@@ -1299,6 +1425,7 @@ export const useFamily = create<Store>((set, get) => {
           if (patch.blockedApps !== undefined) patchWorker.blockedApps = patch.blockedApps;
           if (patch.dailyLimits !== undefined) patchWorker.dailyLimits = patch.dailyLimits;
           if (patch.settings !== undefined) patchWorker.settings = patch.settings;
+          if (patch.locationTracking !== undefined) patchWorker.locationTracking = patch.locationTracking;
           if (patch.bedtime !== undefined) {
             patchWorker.bedtime = patch.bedtime.enabled
               ? {
@@ -1490,9 +1617,53 @@ export const useFamily = create<Store>((set, get) => {
         toast.error("এই আইটেম এখনো সফলভাবে আপলোড হয়নি");
         return;
       }
-      // Real mode: backupGetDownloadUrl (5-মিনিট presigned GET) + backupGetKey
-      // (DEK unwrap) → browser এ WebCrypto AES-GCM decrypt। Demo: অনুরূপ
-      // পাইপলাইন সিমুলেট করা হয়। R2 কখনো public হয় না।
+      // REAL mode: backupGetDownloadUrl (5-মিনিট presigned GET) + backupGetKey
+      // (DEK unwrap) → browser-এ WebCrypto AES-256-GCM decrypt। R2 কখনো public নয়।
+      if (isRealMode()) {
+        const deviceId = st.device.id;
+        const childUid = st.device.childUid;
+        if (!deviceId || deviceId === DEVICE_UNPAIRED_ID || !childUid || childUid === "—") {
+          toast.error("ডিভাইস সিঙ্ক হয়নি — ডাউনলোড সম্ভব নয়");
+          return;
+        }
+        toast.info(`${item.fileName} ডিক্রিপ্ট করে আনা হচ্ছে…`);
+        (async () => {
+          const [dl, key] = await Promise.all([
+            realBackupGetDownloadUrl(deviceId, itemId),
+            realBackupGetKey(childUid),
+          ]);
+          const res = await fetch(dl.url);
+          if (!res.ok) throw new RealApiError("internal", `R2 fetch failed (HTTP ${res.status})`);
+          const cipherBytes = new Uint8Array(await res.arrayBuffer());
+          if (!dl.ivB64) throw new RealApiError("internal", "Item has no IV — cannot decrypt.");
+          const rawKey = Uint8Array.from(atob(key.keyB64), (c) => c.charCodeAt(0));
+          const iv = Uint8Array.from(atob(dl.ivB64), (c) => c.charCodeAt(0));
+          const cryptoKey = await crypto.subtle.importKey("raw", rawKey, "AES-GCM", false, ["decrypt"]);
+          const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, cryptoKey, cipherBytes);
+          const blob = new Blob([plain], { type: dl.mimeType || item.mimeType });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = dl.fileName || item.fileName;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          setTimeout(() => URL.revokeObjectURL(url), 30_000);
+          toast.success(`${dl.fileName} ডিক্রিপ্ট করে ডাউনলোড হয়েছে`);
+          addAudit({
+            actorRole: "parent",
+            action: "BACKUP_DOWNLOAD",
+            result: "EXECUTED",
+            detail: `${dl.fileName} — presigned GET + AES-256-GCM decrypt (R2 private)`,
+          });
+        })().catch((err: unknown) => {
+          toast.error(
+            `ডাউনলোড ব্যর্থ — ${err instanceof RealApiError ? err.message : "নেটওয়ার্ক/ডিক্রিপ্ট সমস্যা"}`,
+          );
+          addAudit({ actorRole: "parent", action: "BACKUP_DOWNLOAD", result: "FAILED", detail: item.fileName });
+        });
+        return;
+      }
       addAudit({
         actorRole: "parent",
         action: "BACKUP_DOWNLOAD",

@@ -74,6 +74,8 @@
     <string name="settings_usage_access">App usage access</string>
     <string name="settings_camera">Camera</string>
     <string name="settings_microphone">Microphone</string>
+    <string name="settings_overlay">Display over other apps</string>
+    <string name="settings_permissions_hint">Toggles show the real system state — tap one to open the exact permission dialog.</string>
     <string name="settings_battery_title">Battery &amp; reliability</string>
     <string name="settings_battery_action">Allow background runs (ignore battery optimization)</string>
     <string name="settings_battery_manufacturer_note">Additional battery settings may be required on %1$s devices. Open your phone\'s battery settings and allow this app to run in the background, otherwise heartbeat and bedtime schedules can be delayed.</string>

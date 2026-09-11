@@ -43,6 +43,8 @@ class PermissionReporter(private val context: Context) {
             "camera" to granted(Manifest.permission.CAMERA),
             "microphone" to granted(Manifest.permission.RECORD_AUDIO),
             "appUsageAccess" to usageAccess,
+            // v1.4.2 — overlay permission (interactive toggle in child Settings)
+            "overlay" to android.provider.Settings.canDrawOverlays(context),
             "batteryOptimizationIgnored" to
                 org.setbd.parentcontrol.reliability.ReliabilityHelper.isIgnoringBatteryOptimizations(context),
             "accessibilityService" to

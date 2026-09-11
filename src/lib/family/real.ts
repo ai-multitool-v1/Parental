@@ -76,6 +76,11 @@ function app(): FirebaseApp {
   );
 }
 
+/** Shared Firebase app — used by the WebRTC viewer's Firestore signaling. */
+export function firebaseApp(): FirebaseApp {
+  return app();
+}
+
 function auth(): Auth {
   return getAuth(app());
 }
@@ -351,6 +356,13 @@ export interface RealDeviceDoc {
   networkType: string | null;
   appVersion: string | null;
   androidVersion: string | null;
+  // v1.4.2 — structured device identity (child heartbeat).
+  model: string | null;
+  manufacturer: string | null;
+  ramTotalMb: number | null;
+  ramAvailableMb: number | null;
+  storageTotalGb: number | null;
+  storageAvailableGb: number | null;
   policyVersion: number | null;
   permissions: Record<string, unknown> | null;
   policy: Record<string, unknown> | null;
@@ -434,4 +446,113 @@ export async function realSetBackupPolicy(
 ): Promise<{ version: number }> {
   const data = await callSecure("backupSetPolicy", { deviceId, categories });
   return { version: Number(data["version"] ?? 0) };
+}
+
+/* ═════════════ heavy device collections (deviceData endpoint) ═══════════ */
+
+export interface RealInstalledApp {
+  packageName: string;
+  appName: string;
+  versionName: string;
+  isSystem: boolean;
+  installedAtMs: number;
+}
+
+export interface RealUsageDay {
+  date: string;
+  totalScreenTimeMinutes: number;
+  perApp: Record<string, { appName?: string; minutes?: number }>;
+}
+
+export interface RealLocationPoint {
+  id: string;
+  lat: number;
+  lng: number;
+  accuracy: number;
+  timestampMs: number;
+}
+
+export interface RealEmergencyEvent {
+  id: string;
+  type: string;
+  lat: number | null;
+  lng: number | null;
+  batteryLevel: number | null;
+  networkType: string | null;
+  acknowledged: boolean;
+  createdAtMs: number;
+}
+
+export interface RealBackupItem {
+  id: string;
+  category: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  ivB64: string | null;
+  uploadedAtMs: number;
+}
+
+export interface RealNotification {
+  id: string;
+  message: string;
+  deliveredAtMs: number | null;
+  createdAtMs: number;
+}
+
+export interface RealActiveSession {
+  sessionId: string;
+  type: string;
+  state: string;
+  startedAtMs: number | null;
+  expiresAtMs: number | null;
+}
+
+export interface RealDeviceData {
+  deviceId: string;
+  apps?: RealInstalledApp[];
+  usage?: RealUsageDay[];
+  locations?: RealLocationPoint[];
+  emergencyEvents?: RealEmergencyEvent[];
+  backupStats?: Record<string, unknown> | null;
+  backupItems?: RealBackupItem[];
+  notifications?: RealNotification[];
+  sessions?: RealActiveSession[];
+}
+
+/**
+ * Fetches the heavy per-device collections (apps inventory, usage, location
+ * history, SOS events, backup items, notifications, active sessions). The
+ * dashboard calls this on view-open + every 60s — NOT in the 5s poll.
+ */
+export async function realDeviceData(
+  deviceId: string,
+  sections: string[]
+): Promise<RealDeviceData> {
+  const data = await callSecure("deviceData", { deviceId, sections });
+  return data as unknown as RealDeviceData;
+}
+
+/* ═════════════════ real backup download (presigned URL + DEK) ═════════ */
+
+/** Presigned GET URL + envelope metadata for one uploaded backup item. */
+export async function realBackupGetDownloadUrl(
+  deviceId: string,
+  itemId: string
+): Promise<{ url: string; ivB64: string | null; mimeType: string; fileName: string }> {
+  const data = await callSecure("backupGetDownloadUrl", { deviceId, itemId });
+  return {
+    url: String(data["url"] ?? ""),
+    ivB64: (data["ivB64"] as string | null) ?? null,
+    mimeType: String(data["mimeType"] ?? "application/octet-stream"),
+    fileName: String(data["fileName"] ?? itemId),
+  };
+}
+
+/** The child's backup DEK (escrow-unwrapped server-side, premium-gated). */
+export async function realBackupGetKey(
+  childUid: string
+): Promise<{ keyB64: string; keyVersion?: number }> {
+  const data = await callSecure("backupGetKey", { childUid });
+  return { keyB64: String(data["keyB64"] ?? ""), keyVersion: Number(data["keyVersion"] ?? 1) };
 }

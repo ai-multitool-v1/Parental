@@ -59,5 +59,20 @@ export interface AdminSession {
   loginAt: number;
 }
 
+/** v1.4.2 — REAL Firebase Auth account (Worker adminListUsers row). */
+export interface FirebaseAdminUser {
+  uid: string;
+  email: string;
+  displayName: string;
+  disabled: boolean;
+  admin: boolean;
+  createdAtMs: number | null;
+  lastSignInMs: number | null;
+  plan: "free" | "premium";
+  banned: boolean;
+  role: string | null;
+  deviceCount: number;
+}
+
 /** return codes — UI আলাদা মেসেজ দেখায় */
 export type AdminLoginResult = "ok" | "empty" | "invalid" | "locked";

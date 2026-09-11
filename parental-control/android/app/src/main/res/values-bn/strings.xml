@@ -67,6 +67,8 @@
     <string name="settings_usage_access">অ্যাপ ব্যবহারের তথ্য</string>
     <string name="settings_camera">ক্যামেরা</string>
     <string name="settings_microphone">মাইক্রোফোন</string>
+    <string name="settings_overlay">অন্য অ্যাপের উপরে দেখানো</string>
+    <string name="settings_permissions_hint">টগলগুলো আসল সিস্টেম অবস্থা দেখায় — ট্যাপ করলেই সংশ্লিষ্ট অনুমতির ডায়ালগ খুলবে।</string>
     <string name="settings_battery_title">ব্যাটারি ও নির্ভরযোগ্যতা</string>
     <string name="settings_battery_action">ব্যাকগ্রাউন্ডে চলার অনুমতি দিন (ব্যাটারি অপ্টিমাইজেশন উপেক্ষা)</string>
     <string name="settings_battery_manufacturer_note">%1$s ডিভাইসে অতিরিক্ত ব্যাটারি সেটিংস দরকার হতে পারে। ফোনের ব্যাটারি সেটিংসে গিয়ে এই অ্যাপকে ব্যাকগ্রাউন্ডে চলার অনুমতি দিন, নাহলে হার্টবিট ও ঘুমের সময়সূচি দেরিতে কাজ করতে পারে।</string>

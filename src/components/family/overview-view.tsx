@@ -96,7 +96,16 @@ export function OverviewView({ onNavigate }: { onNavigate: (v: ViewKey) => void 
               </div>
               <div className="min-w-0">
                 <p className="font-bold text-lg leading-tight">👦 {device.childName} — {device.name}</p>
-                <p className="text-xs text-muted-foreground truncate">{device.model} · {device.androidVersion}</p>
+                <p className="text-xs text-muted-foreground truncate">
+                  {device.model}{device.manufacturer ? ` · ${device.manufacturer}` : ""} · Android {device.androidVersion}
+                </p>
+                {(device.ramTotalMb != null || device.storageTotalGb != null) && (
+                  <p className="text-[11px] text-muted-foreground truncate">
+                    {device.ramTotalMb != null && <>RAM {device.ramTotalMb >= 1024 ? `${(device.ramTotalMb / 1024).toFixed(1)} GB` : `${Math.round(device.ramTotalMb)} MB`}</>}
+                    {device.ramTotalMb != null && device.storageTotalGb != null && " · "}
+                    {device.storageTotalGb != null && <>স্টোরেজ {device.storageTotalGb} GB</>}
+                  </p>
+                )}
               </div>
               <Badge className={cn("ml-auto text-xs", statusMeta.cls)}>{statusMeta.label}</Badge>
             </div>

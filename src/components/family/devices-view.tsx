@@ -50,7 +50,9 @@ export function DevicesView({ onNavigate }: { onNavigate: (v: ViewKey) => void }
               </div>
               <div className="min-w-0">
                 <p className="font-semibold">{device.childName} — {device.name}</p>
-                <p className="text-xs text-muted-foreground">{device.model} · {device.androidVersion}</p>
+                <p className="text-xs text-muted-foreground">
+                  {device.model}{device.manufacturer ? ` · ${device.manufacturer}` : ""} · Android {device.androidVersion} · {device.appVersion}
+                </p>
               </div>
               <div className="ml-auto flex flex-col items-end gap-1">
                 <Badge variant={device.paired ? "default" : "destructive"} className={device.paired ? "bg-emerald-600" : ""}>
@@ -66,6 +68,13 @@ export function DevicesView({ onNavigate }: { onNavigate: (v: ViewKey) => void }
                 ["ব্যাটারি", `${Math.round(device.batteryLevel)}%${device.isCharging ? " (charging)" : ""}`],
                 ["নিয়ন্ত্রণ", device.managementMode === "none" ? "সীমিত" : "সক্রিয়"],
                 ["Heartbeat", fmtClock(device.reliability.lastHeartbeat)],
+                ["মডেল", device.model || "—"],
+                ["ব্র্যান্ড", device.manufacturer || "—"],
+                ["RAM", device.ramTotalMb != null ? (device.ramTotalMb >= 1024 ? `${(device.ramTotalMb / 1024).toFixed(1)} GB` : `${Math.round(device.ramTotalMb)} MB`) : "—"],
+                ["স্টোরেজ", device.storageTotalGb != null ? `${device.storageTotalGb} GB` : "—"],
+                ["অ্যান্ড্রয়েড", device.androidVersion || "—"],
+                ["অ্যাপ ভার্সন", device.appVersion || "—"],
+                ["পেয়ার হয়েছে", device.lastSeen ? fmtClock(device.lastSeen) : "—"],
               ].map(([k, v]) => (
                 <div key={k} className="rounded-lg border bg-muted/30 px-3 py-2">
                   <dt className="text-[11px] text-muted-foreground">{k}</dt>

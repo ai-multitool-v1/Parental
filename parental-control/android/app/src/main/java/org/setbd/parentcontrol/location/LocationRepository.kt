@@ -118,6 +118,17 @@ class LocationRepository(private val context: Context) {
     /** Persists one fix to Firestore and mirrors it into [lastKnown]. */
     private suspend fun writeFix(location: Location, source: String, reason: String) {
         lastKnown = location
+        // v1.4.2 — parent's locationTracking policy gate: OFF stops CONTINUOUS
+        // ("live") tracking. One-shot parent requests and SOS always pass —
+        // they are explicit, visible and safety-relevant.
+        if (source == "live") {
+            val trackingOn = try {
+                ServiceLocator.policyRepository.currentPolicy()?.locationTracking ?: true
+            } catch (e: Exception) {
+                true
+            }
+            if (!trackingOn) return
+        }
         val deviceId = ServiceLocator.deviceId
         try {
             firestore.collection("devices").document(deviceId)
