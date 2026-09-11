@@ -60,6 +60,14 @@ async function callWorkerAdmin(
   } catch {
     data = { ok: false };
   }
+  // The Worker router wraps EVERY successful handler result as
+  // {ok:true, data:{…}} (worker/src/index.ts). Unwrap once so the admin
+  // store reads `users`, `total`, `devicesRemoved` … at the top level.
+  // Error payloads ({ok:false,error:{…}}) have no data field → untouched.
+  const inner = data["data"];
+  if (data["ok"] === true && inner && typeof inner === "object" && !Array.isArray(inner)) {
+    data = { ok: true, ...(inner as Record<string, unknown>) };
+  }
   return { status: res.status, data };
 }
 

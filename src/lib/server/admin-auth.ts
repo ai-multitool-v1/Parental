@@ -31,6 +31,7 @@ import "server-only";
  */
 
 import {
+  createHash,
   createHmac,
   randomBytes,
   scryptSync,
@@ -154,6 +155,23 @@ interface SessionSecret {
 }
 
 function loadSessionSecret(): Buffer {
+  // 1) Explicit operator secret — highest priority, stable everywhere.
+  const envSecret = process.env["ADMIN_SESSION_SECRET"];
+  if (envSecret && envSecret.trim().length >= 16) {
+    return createHash("sha256").update(envSecret.trim()).digest();
+  }
+  // 2) Serverless (Vercel): the .server file store is per-instance/ephemeral,
+  //    so a random file secret silently invalidates signed cookies whenever a
+  //    request lands on another instance (login OK → next fetch 401). Derive
+  //    a deterministic secret from ADMIN_PASSWORD_HASH instead — stable
+  //    across all instances of one deployment, rotates with the password.
+  const envHash = process.env["ADMIN_PASSWORD_HASH"];
+  if (envHash && envHash.trim().length > 0) {
+    return createHmac("sha256", createHash("sha256").update(envHash.trim()).digest())
+      .update("fs-admin-session-cookie/v1")
+      .digest();
+  }
+  // 3) File-backed random secret (self-hosted / long-lived dev server).
   try {
     if (existsSync(SESSION_SECRET_FILE)) {
       const raw = JSON.parse(readFileSync(SESSION_SECRET_FILE, "utf8")) as SessionSecret;
