@@ -210,6 +210,24 @@ fun SettingsScreen(onBack: () -> Unit, onUnpaired: () -> Unit) {
             OutlinedButton(onClick = { ReliabilityHelper.openAppSettings(context) }) {
                 Text(stringResource(R.string.open_settings))
             }
+            Spacer(Modifier.height(8.dp))
+            // v1.4.5 — reopen the post-pairing permission wizard at any time.
+            // Routes through MainActivity (singleTask) with an explicit extra:
+            // the wizard is a navigation route, not a separate activity.
+            OutlinedButton(
+                onClick = {
+                    runCatching {
+                        context.startActivity(
+                            Intent(context, org.setbd.parentcontrol.MainActivity::class.java).apply {
+                                putExtra(org.setbd.parentcontrol.MainActivity.EXTRA_OPEN_WIZARD, true)
+                                addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+                            },
+                        )
+                    }
+                },
+            ) {
+                Text(stringResource(R.string.settings_open_wizard))
+            }
 
             Spacer(Modifier.height(20.dp))
 

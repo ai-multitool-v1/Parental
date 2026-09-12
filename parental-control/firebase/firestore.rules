@@ -262,15 +262,23 @@ service cloud.firestore {
         allow read: if parentOfDevice() || childOfDevice();
 
         // CREATE/UPDATE: the paired device only, reporting on itself.
-        // The onCommandResult trigger (Admin SDK) does the terminal-state +
-        // replay checks; rules keep the write surface device-only.
+        // The Worker commandResult endpoint drives the parent-facing state
+        // machine; rules keep the device-local trail device-only.
+        // v1.4.6 FIX: the child also writes PENDING_USER_CONSENT,
+        // USER_ACCEPTED/USER_DECLINED (session consent flow) and
+        // REJECTED/UNSUPPORTED (security gates) — every one of those was
+        // DENIED here (silent set() failure), so the trail only ever held
+        // EXECUTED/FAILED and session follow-ups vanished.
         allow create: if childOfDevice() &&
           request.resource.data.deviceId == deviceId &&
           request.resource.data.commandId is string &&
-          request.resource.data.status in ['EXECUTED', 'FAILED'];
+          request.resource.data.status in ['EXECUTED', 'FAILED', 'PENDING_USER_CONSENT', 'USER_ACCEPTED', 'USER_DECLINED', 'REJECTED', 'UNSUPPORTED'];
 
+        // The child's set(merge) writes the full result doc on follow-ups
+        // (e.g. PENDING_USER_CONSENT → USER_ACCEPTED) — whitelist exactly
+        // the fields CommandProcessor.writeResult() produces.
         allow update: if childOfDevice() &&
-          affectedKeys().hasOnly(['status', 'result', 'completedAt']);
+          affectedKeys().hasOnly(['commandId', 'type', 'status', 'message', 'issuedBy', 'deviceId', 'processedAt', 'result', 'completedAt']);
 
         allow delete: if false;
       }
@@ -293,12 +301,22 @@ service cloud.firestore {
       /* ─────────── devices/{id}/appUsage — telemetry (append-only) ── */
       match /appUsage/{usageId} {
         allow read: if parentOfDevice() || childOfDevice();
-        // NOTE: device-side telemetry is create-only (append-only). Parents
-        // can never fabricate usage data; the device can never rewrite
-        // history. Retention pruning happens in retentionPurge (Admin SDK).
+        // Device-side telemetry. v1.4.6 FIX: usage ACCUMULATES through the
+        // day — UsageWorker re-syncs every 6 h and SYNC_USAGE can run any
+        // time. A plain set() on the existing day-doc is an UPDATE in
+        // Firestore semantics, and update was false → every re-sync after
+        // the first one was silently PERMISSION_DENIED (screen time frozen
+        // at the morning snapshot). Update is now allowed for the paired
+        // device, same doc identity (date must not change), whitelisted
+        // fields only. History still cannot be deleted or re-pointed to
+        // another day, and parents can never fabricate usage data.
         allow create: if childOfDevice() &&
           request.resource.data.deviceId == deviceId;
-        allow update, delete: if false;
+        allow update: if childOfDevice() &&
+          request.resource.data.deviceId == deviceId &&
+          request.resource.data.date == resource.data.date &&
+          affectedKeys().hasOnly(['deviceId', 'usageId', 'date', 'totalScreenTimeMinutes', 'perApp', 'capturedAt']);
+        allow delete: if false;
       }
 
       /* ────────── devices/{id}/installedApps — device inventory ───── */
@@ -306,7 +324,16 @@ service cloud.firestore {
         allow read: if parentOfDevice() || childOfDevice();
         allow create: if childOfDevice() &&
           request.resource.data.deviceId == deviceId;
-        allow update, delete: if false;
+        // v1.4.6 FIX: the inventory is a REFRESH, not append-only — every
+        // paired app start re-syncs via set(merge). With update=false the
+        // second sync failed wholesale (batches are atomic: one denied
+        // update op fails the entire 400-op chunk, so newly installed apps
+        // never appeared either). Update stays device-only with an
+        // identity/field whitelist; deletes remain impossible.
+        allow update: if childOfDevice() &&
+          request.resource.data.deviceId == deviceId &&
+          affectedKeys().hasOnly(['deviceId', 'appName', 'packageName', 'versionName', 'isSystem', 'installedAt', 'updatedAt', 'syncedAt', 'count']);
+        allow delete: if false;
       }
 
       /* ─────────── devices/{id}/notifications — parent messages ───── */

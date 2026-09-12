@@ -37,6 +37,22 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
+    <!-- v1.4.5 FIX: "Apps with usage access" was UNGRANTABLE — the app never
+         appeared in the system usage-access list without this manifest entry,
+         so hasUsageAccessPermission() stayed false forever and SYNC_USAGE /
+         the screen-time dashboard were permanently dead (UNSUPPORTED).
+         Declaring it makes the app visible in Settings → Apps with usage
+         access; the child still has to flip the toggle manually (app-ops). -->
+    <uses-permission
+        android:name="android.permission.PACKAGE_USAGE_STATS"
+        tools:ignore="ProtectedPermissions" />
+
+    <!-- v1.4.5 FIX: Android 11+ package visibility. Without QUERY_ALL_PACKAGES
+         getInstalledApplications() returned only launcher-queryable apps, so
+         the parent's installed-apps inventory synced a handful of packages
+         instead of the full list. -->
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
+
     <!-- Dial-code fallback (*#*#1111#*#*) for OEM dialers that do not emit
          SECRET_CODE broadcasts. Deprecated by Android 10 for non-dialer apps,
          hence maxSdkVersion=28. Android 10+ uses the SECRET_CODE receiver. -->

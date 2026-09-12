@@ -121,6 +121,15 @@ class SecureStore(context: Context) {
     fun cachedPolicyJson(): String? = prefs.getString(KEY_POLICY_CACHE, null)
     fun cachePolicyJson(json: String) = prefs.edit().putString(KEY_POLICY_CACHE, json).apply()
 
+    // ----------------------- permission wizard flag (v1.4.5) -----------------
+    // One-time post-pairing wizard. False (default) means "show the wizard on
+    // next launch / right after pairing"; the child can dismiss it and reopen
+    // it from Settings at any time.
+
+    fun isPermissionWizardDone(): Boolean = prefs.getBoolean(KEY_PERMISSION_WIZARD_DONE, false)
+    fun setPermissionWizardDone(done: Boolean) =
+        prefs.edit().putBoolean(KEY_PERMISSION_WIZARD_DONE, done).apply()
+
     // --------------------------- backup policy cache (v1.3.0) ----------------
 
     fun cachedBackupPolicyJson(): String? = prefs.getString(KEY_BACKUP_POLICY_CACHE, null)
@@ -167,6 +176,7 @@ class SecureStore(context: Context) {
         const val KEY_PROCESSED_COMMANDS = "processedCommandIds"
         const val KEY_LAST_SOS = "lastSosAt"
         const val KEY_POLICY_CACHE = "policyCacheJson"
+        const val KEY_PERMISSION_WIZARD_DONE = "permissionWizardDone"
         const val KEY_BACKUP_POLICY_CACHE = "backupPolicyCacheJson"
         const val KEY_BACKUP_CONSENT_CACHE = "backupConsentCacheJson"
         const val MAX_PROCESSED_COMMANDS = 500

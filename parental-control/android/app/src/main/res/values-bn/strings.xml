@@ -177,4 +177,35 @@
     <string name="perm_request_note">কিছুই স্বয়ংক্রিয়ভাবে গ্রহণ করা হবে না — Android-এর নিজস্ব ডায়ালগ/সেটিংস স্ক্রিন আপনাকে সরাসরি জিজ্ঞেস করবে, আপনি চাইলে "না" বলতে পারবেন।</string>
     <string name="perm_request_allow">এগিয়ে যান</string>
     <string name="perm_request_later">এখন নয়</string>
+
+    <!-- ============ v1.4.5 — post-pairing PERMISSION WIZARD ================ -->
+    <string name="wizard_title">অনুমতিগুলো সেট করুন</string>
+    <string name="wizard_subtitle">অভিভাবক ড্যাশবোর্ডের কোনো ফিচার তখনই কাজ করে, যখন এই ডিভাইসে সংশ্লিষ্ট অনুমতি দেওয়া থাকে। প্রতিটি ধাপ Android-এর নিজস্ব ডায়ালগ খোলে — নিয়ন্ত্রণ সবসময় আপনার হাতে, কিছুই গোপনে চালু হয় না।</string>
+    <string name="wizard_progress">%2$d-এর মধ্যে %1$dটি অনুমোদিত</string>
+    <string name="wizard_grant">অনুমতি দিন</string>
+    <string name="wizard_done">সম্পন্ন — এগিয়ে যান</string>
+    <string name="wizard_skip">পরে করব</string>
+    <string name="wizard_boot_note">বুট রিসিভার অ্যাপের ভেতরেই আছে: ফোন রিস্টার্ট হলে অ্যাপ নিজে থেকেই তার মনিটরিং কাজগুলো আবার চালু করে। এটা ইনস্টল-টাইম অনুমতি, তাই App Info → Permissions-এ দেখা যায় না।</string>
+    <string name="wizard_notifications">নোটিফিকেশন</string>
+    <string name="wizard_notifications_desc">অভিভাবকের মেসেজ ও সেশন রিকোয়েস্ট আপনি দেখতে পান — এটা ছাড়া সব চুপচাপ মিস হবে।</string>
+    <string name="wizard_location">লোকেশন</string>
+    <string name="wizard_location_desc">অভিভাবক এই ডিভাইসের লাইভ ও একবারের লোকেশন দেখতে পাবেন।</string>
+    <string name="wizard_background_location">ব্যাকগ্রাউন্ড লোকেশন</string>
+    <string name="wizard_background_location_desc">অ্যাপ বন্ধ থাকলেও লোকেশন কাজ করার জন্য দরকার।</string>
+    <string name="wizard_camera">ক্যামেরা</string>
+    <string name="wizard_camera_desc">ক্যামেরা সেশনের আগে দরকার — প্রতিটি সেশনের জন্য আপনাকে আবার অনুমতি দিতে হবে।</string>
+    <string name="wizard_microphone">মাইক্রোফোন</string>
+    <string name="wizard_microphone_desc">অডিও সেশনের আগে দরকার — প্রতিটি সেশনের জন্য আপনাকে আবার অনুমতি দিতে হবে।</string>
+    <string name="wizard_usage_access">ব্যবহারের অনুমতি (Usage access)</string>
+    <string name="wizard_usage_access_desc">স্ক্রিন টাইম ও অ্যাপ ব্যবহারের রিপোর্টের জন্য। লিস্ট থেকে Family Safety বেছে নিয়ে Allow করুন।</string>
+    <string name="wizard_overlay">অন্য অ্যাপের উপরে দেখা</string>
+    <string name="wizard_overlay_desc">ব্লক করা অ্যাপ ও ঘুমের সময়ে ব্লকিং স্ক্রিন দেখানোর জন্য দরকার।</string>
+    <string name="wizard_battery">ব্যাটারি অপ্টিমাইজেশন বাদ দিন</string>
+    <string name="wizard_battery_desc">হার্টবিট, ঘুমের অ্যালার্ম ও ইউসেজ সিঙ্ক নির্ভরযোগ্যভাবে চলবে (বিশেষ করে Xiaomi/Oppo/Vivo-তে)।</string>
+    <string name="wizard_device_admin">ডিভাইস অ্যাডমিনিস্ট্রেটর</string>
+    <string name="wizard_device_admin_desc">অভিভাবকের রিমোট LOCK বাটন কাজ করার জন্য। Settings থেকে যেকোনো সময় বন্ধ করতে পারবেন।</string>
+    <string name="wizard_accessibility">অ্যাপ প্রোটেকশন (Accessibility)</string>
+    <string name="wizard_accessibility_desc">ব্লক করা অ্যাপ ও ঘুমের নিয়ম রিয়েল-টাইমে প্রয়োগ হয়। শুধু কোন অ্যাপ খোলা হলো সেটা দেখে — টাইপিং বা কনটেন্ট কিছুই পড়ে না।</string>
+
+    <string name="settings_open_wizard">অনুমতি সেটআপ উইজার্ড</string>
 </resources>

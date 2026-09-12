@@ -30,6 +30,7 @@ import org.setbd.parentcontrol.reliability.ReliabilityHelper
 import org.setbd.parentcontrol.security.PermissionReporter
 import org.setbd.parentcontrol.ui.ConsentDialog
 import org.setbd.parentcontrol.ui.MainScreen
+import org.setbd.parentcontrol.ui.PermissionWizardScreen
 import org.setbd.parentcontrol.ui.SafetyCheckDialog
 import org.setbd.parentcontrol.ui.SettingsScreen
 import org.setbd.parentcontrol.ui.SplashCreditsOverlay
@@ -99,11 +100,20 @@ class MainActivity : ComponentActivity() {
         intent.getStringExtra(EXTRA_SAFETY_CHECK)?.let {
             ServiceLocator.appState.showSafetyCheck(it)
         }
+        if (intent.getBooleanExtra(EXTRA_OPEN_WIZARD, false)) {
+            // Settings → "Permission wizard": bring the (singleTask) activity
+            // forward and request navigation to the wizard route.
+            wizardReopenRequested.value = true
+        }
     }
 
     companion object {
         const val EXTRA_BEDTIME_ACTIVE = "org.setbd.parentcontrol.extra.BEDTIME_ACTIVE"
         const val EXTRA_SAFETY_CHECK = "org.setbd.parentcontrol.extra.SAFETY_CHECK"
+        const val EXTRA_OPEN_WIZARD = "org.setbd.parentcontrol.extra.OPEN_WIZARD"
+
+        /** One-shot navigation request consumed by [FamilySafetyApp]. */
+        val wizardReopenRequested = androidx.compose.runtime.mutableStateOf(false)
     }
 }
 
@@ -184,12 +194,44 @@ private fun FamilySafetyApp(startOnPaired: Boolean, bedtimeRequested: Boolean) {
     }
 
     // ---------------------------- navigation -------------------------------
-    NavHost(navController = navController, startDestination = if (startOnPaired) "main" else "onboarding") {
+    // v1.4.5 — post-pairing permission wizard. A freshly paired (or previously
+    // paired-but-never-wizarded) install lands on the wizard first; every
+    // parent action was UNSUPPORTED before because NOTHING ever requested
+    // location/camera/mic/usage/admin/accessibility after pairing.
+    val startDestination = when {
+        !startOnPaired -> "onboarding"
+        !ServiceLocator.secureStore.isPermissionWizardDone() -> "permissions"
+        else -> "main"
+    }
+    // Settings → "Permission wizard" re-entry (consumes the one-shot flag).
+    // (MUST live in this composable body — NavGraphBuilder DSL is not a
+    // @Composable context, LaunchedEffect is illegal inside NavHost's block.)
+    LaunchedEffect(MainActivity.wizardReopenRequested.value) {
+        if (MainActivity.wizardReopenRequested.value) {
+            MainActivity.wizardReopenRequested.value = false
+            navController.navigate("permissions")
+        }
+    }
+
+    NavHost(navController = navController, startDestination = startDestination) {
+
         composable("onboarding") {
             OnboardingRoute(
                 onPaired = {
                     ServiceLocator.onPaired()
-                    navController.navigate("main") { popUpTo("onboarding") { inclusive = true } }
+                    // Straight into the wizard — not "main" — so the child
+                    // grants the permissions the features actually need.
+                    navController.navigate("permissions") { popUpTo("onboarding") { inclusive = true } }
+                },
+            )
+        }
+        composable("permissions") {
+            PermissionWizardScreen(
+                onDone = {
+                    navController.navigate("main") { popUpTo("permissions") { inclusive = true } }
+                },
+                onSkip = {
+                    navController.navigate("main") { popUpTo("permissions") { inclusive = true } }
                 },
             )
         }

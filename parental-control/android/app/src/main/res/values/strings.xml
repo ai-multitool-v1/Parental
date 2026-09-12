@@ -187,4 +187,35 @@
     <string name="perm_request_note">Nothing is granted automatically — the Android system dialog / settings screen asks you directly, and you can always say no.</string>
     <string name="perm_request_allow">Continue</string>
     <string name="perm_request_later">Not now</string>
+
+    <!-- ============ v1.4.5 — post-pairing PERMISSION WIZARD ================ -->
+    <string name="wizard_title">Set up permissions</string>
+    <string name="wizard_subtitle">The parent dashboard only works for features whose permissions are granted on this device. Each step opens the official Android dialog — you are always in control, and nothing is granted silently.</string>
+    <string name="wizard_progress">%1$d of %2$d granted</string>
+    <string name="wizard_grant">Allow</string>
+    <string name="wizard_done">Done — continue</string>
+    <string name="wizard_skip">Skip for now</string>
+    <string name="wizard_boot_note">Boot receiver is built in: after a phone restart the app automatically re-arms its monitoring jobs. It is an install-time permission, so it never appears under App Info → Permissions.</string>
+    <string name="wizard_notifications">Notifications</string>
+    <string name="wizard_notifications_desc">Parent messages and session requests must be visible to you.</string>
+    <string name="wizard_location">Location</string>
+    <string name="wizard_location_desc">Lets the parent see this device\'s live and one-shot location.</string>
+    <string name="wizard_background_location">Background location</string>
+    <string name="wizard_background_location_desc">Needed so location also works when the app is closed.</string>
+    <string name="wizard_camera">Camera</string>
+    <string name="wizard_camera_desc">Required before any camera session starts — you still approve every single session.</string>
+    <string name="wizard_microphone">Microphone</string>
+    <string name="wizard_microphone_desc">Required before any audio session starts — you still approve every single session.</string>
+    <string name="wizard_usage_access">Usage access</string>
+    <string name="wizard_usage_access_desc">Screen-time and per-app usage reports for the parent dashboard. Pick Family Safety in the list, then allow.</string>
+    <string name="wizard_overlay">Display over other apps</string>
+    <string name="wizard_overlay_desc">Lets the blocking screen appear over blocked apps and during bedtime.</string>
+    <string name="wizard_battery">Ignore battery optimization</string>
+    <string name="wizard_battery_desc">Keeps heartbeat, bedtime alarms and usage sync running reliably (especially Xiaomi/Oppo/Vivo).</string>
+    <string name="wizard_device_admin">Device administrator</string>
+    <string name="wizard_device_admin_desc">Enables the parent\'s remote LOCK button. You can deactivate it any time in Settings.</string>
+    <string name="wizard_accessibility">App protection (Accessibility)</string>
+    <string name="wizard_accessibility_desc">Enforces blocked apps and bedtime rules in real time. Watches app switches only — no typing, no content.</string>
+
+    <string name="settings_open_wizard">Permission setup wizard</string>
 </resources>
